@@ -1,0 +1,6 @@
+SETTING:
+  MODEL_DIR_NAME: '../models/' # 学習結果の諸々を保存するディレクトリ
+  EDA_DIR_NAME: '../edas/' # EDAに関する情報を保存するディレクトリ
+  SUB_DIR_NAME: '../data/submission/' # sample提出ファイル保存ディレクトリ
+  RAW_DIR_NAME: '../data/raw/' # オリジナルデータの格納先ディレクトリ
+  FEATURE_DIR_NAME: '../data/features/' # 特徴量の格納先ディレクトリ

@@ -1,0 +1,13 @@
+.tmp.drivedownload
+.tmp.driveupload
+.DS_Store
+__pycache__
+kaggle.json
+gcs-key.json
+git_token
+
+data/external
+data/features/*.pkl
+data/raw/*.csv
+data/submission/*.csv
+models/
