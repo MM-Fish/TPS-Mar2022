@@ -1,26 +1,19 @@
 # playgound-series-mar-2022
 
 ## コンペ概要
-- 微生物の種類を分類するコンペ
-https://www.kaggle.com/c/tabular-playground-series-feb-2022
+- アメリカの地下鉄の24時間の交通量予測
+- 時系列コンペ
+https://www.kaggle.com/c/tabular-playground-series-mar-2022/overview
 
 
 ### データ
-列：塩基ヒストグラムーATGCの4種類の塩基から組み合わせありで10個取得するパターン（合計286パターン）
-行：サンプル
-各列の値：(塩基ヒストグラムのスペクトル) - (完全にランダムなバイアス) → 2/19のnote確認
-バイアススペクトル = 1/4^k × ( k! / (w!x!y!z!) ) → k=10
-完全にランダムなバイアススペクトルを取り除くことで、種特異の値を検出しやすくする。
-A10T0G0C0より、A4T3G3C3の方が生じやすい。→前者は順序を加味しても1通りだが、後者は 10!/(4!3!3!3!) = 700通り存在する
-このようなバイアスを取り除くために、完全にランダムなバイアスで減算する。
+row_id - a unique identifier for this instance
+time - the 20-minute period in which each measurement was taken
+x - the east-west midpoint coordinate of the roadway
+y - the north-south midpoint coordinate of the roadway
+direction - the direction of travel of the roadway. EB indicates "eastbound" travel, for example, while SW indicates a "southwest" direction of travel.
+congestion - congestion levels for the roadway during each hour; the target. The congestion measurements have been normalized to the range 0 to 100.
 
-- データ作成方法
-①1個体のゲノムから？個のゲノム(仮想の1000個体)を作成
-②各ゲノムから塩基ヒストグラムの確率分布(各個体が一意にもつ塩基ヒストグラムの確率)を作成 
-③r個のBOC(10個の塩基、A2T3G3C2など)をランダムに取得して塩基ヒストグラム（実験により作成されるヒストグラム）を作成する。
-④エラー率mの二項分布に従って、塩基ヒストグラムに誤差や突然変異を加える。
-→ ③において、r個のうち、通常は②からサンプリングするが、エラーの時には完全ランダムバイアスからサンプリングする。
-⑤作成された塩基ヒストグラムから（完全にランダムなバイアス）を減算する。
 
-## 22/03/09
-データをそのままでLightGBMで予測
+## 22/03/03
+コンペ参加
