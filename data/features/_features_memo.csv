@@ -1,1 +1,7 @@
 特徴量,メモ
+all_raw_data,全初期データ
+congestion,種名。今回の目的変数。
+coordinate,座標
+direction,方角
+time,年、月、週、日、日付、時間、分、秒
+x_y_direction,x_y_direction

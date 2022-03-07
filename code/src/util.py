@@ -98,6 +98,8 @@ class Submission:
         if task_type == 'multiclass':
             REVERSE_TARGET_ENCODING = {value : key for (key, value) in yml['SETTING']['TARGET_ENCODING'].items()}
             submission[sub_y_column] = pred.iloc[:,0].map(lambda x: REVERSE_TARGET_ENCODING[x])
+        else:
+            submission[sub_y_column] = pred.iloc[:,0]
         
         submission.to_csv(path + f'{run_name}_submission.csv', index=False)
         logger.info(f'{run_name} - end create submission')

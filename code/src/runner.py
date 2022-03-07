@@ -60,7 +60,7 @@ class Runner:
         self.logger = Logger(self.out_dir_name)
         if self.calc_shap:
             self.shap_values = np.zeros(self.train_x.shape)
-        self.metrics = accuracy_score
+        self.metrics = mean_absolute_error
         self.logger.info(f'DEBUG MODE {self.debug}')
         self.logger.info(f'{self.run_name} - train_x shape: {self.train_x.shape}')
         self.logger.info(f'{self.run_name} - train_y shape: {self.train_y.shape}')
@@ -153,11 +153,14 @@ class Runner:
                 va_pred, self.shap_values[va_idx[:shap_sampling]] = model.predict_and_shap(va_x, shap_sampling)
             else:
                 # 回帰問題
-                va_pred = model.predict(va_x)
+                if self.task_type == 'regression':
+                    va_pred = model.predict(va_x)
                 # 二項分類(0.5以上を1とする)
-                # va_pred = (va_pred)> 0.5).astype(int)
+                elif self.task_type == 'binary':
+                    va_pred = (va_pred > 0.5).astype(int)
                 # 多項分類
-                va_pred = np.argmax(va_pred, axis=1)
+                elif self.task_type == 'multiclass':
+                    va_pred = np.argmax(va_pred, axis=1)
                         
             score = self.metrics(va_y, va_pred)
 
@@ -311,7 +314,6 @@ class Runner:
         # self.remove_train_index = df[(df['age']==64) | (df['age']==66) | (df['age']==67)].index
         # df = df.drop(index = self.remove_train_index)
         # -----------------------------------------
-
         return df
 
 
@@ -338,7 +340,8 @@ class Runner:
             _, train_x, _, train_y = train_test_split(train_x, train_y, test_size=test_size, stratify=train_y)
             return train_x, train_y
         else:
-            return  train_x, train_y
+            # return train_x, train_y
+            return train_x.loc[~train_x.isnull().any(axis=1), :], train_y.loc[~train_x.isnull().any(axis=1)]
         
     def load_x_test(self) -> pd.DataFrame:
         """テストデータの特徴量を読み込む

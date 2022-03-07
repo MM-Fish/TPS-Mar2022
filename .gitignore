@@ -11,3 +11,4 @@ git_token
 /data/raw/*.csv
 /data/submission/*.csv
 /models
+/edas
