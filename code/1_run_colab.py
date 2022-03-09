@@ -18,6 +18,7 @@ from src.util import Submission
 from src.models.learning.model_lgb import ModelLGB
 from src.models.learning.model_xgb import ModelXGB
 from src.models.learning.model_keras import ModelKERAS
+from src.models.learning.model_lstm import ModelLSTM
 from src.models.learning.model_lda import ModelLDA
 
 CONFIG_FILE = '../configs/config.yaml'
@@ -116,7 +117,8 @@ if __name__ == '__main__':
     features = [
         'diff_days',
         'datetime_element',
-        'accum_minutes'
+        'accum_minutes',
+        'x_y_direction'
         ]
     target = 'congestion'
 
@@ -133,64 +135,64 @@ if __name__ == '__main__':
     if DEBUG is True:
         cv['n_splits'] = 2
 
-    # ######################################################
-    # 学習・推論 LightGBM ###################################
+    # # ######################################################
+    # # 学習・推論 LightGBM ###################################
 
-    # run nameの設定
-    run_name = 'lgb'
-    run_name = run_name + suffix
-    out_dir_name = MODEL_DIR_NAME + run_name + '/'
+    # # run nameの設定
+    # run_name = 'lgb'
+    # run_name = run_name + suffix
+    # out_dir_name = MODEL_DIR_NAME + run_name + '/'
 
-    # exist_check(MODEL_DIR_NAME, run_name)  # 実行可否確認
-    my_makedirs(out_dir_name)  # runディレクトリの作成。ここにlogなどが吐かれる
+    # # exist_check(MODEL_DIR_NAME, run_name)  # 実行可否確認
+    # my_makedirs(out_dir_name)  # runディレクトリの作成。ここにlogなどが吐かれる
 
-    # 諸々の設定
-    setting = {
-        'run_name': run_name,  # run名 <- settingに不要？
-        'feature_directory': FEATURE_DIR_NAME,  # 特徴量の読み込み先ディレクトリ
-        'target': target,  # 目的変数
-        'calc_shap': False,  # shap値を計算するか否か
-        'save_train_pred': True,  # trainデータでの推論値を保存するか否か
-        'task_type': 'regression',
-        'debug': DEBUG
-    }
+    # # 諸々の設定
+    # setting = {
+    #     'run_name': run_name,  # run名 <- settingに不要？
+    #     'feature_directory': FEATURE_DIR_NAME,  # 特徴量の読み込み先ディレクトリ
+    #     'target': target,  # 目的変数
+    #     'calc_shap': False,  # shap値を計算するか否か
+    #     'save_train_pred': True,  # trainデータでの推論値を保存するか否か
+    #     'task_type': 'regression',
+    #     'debug': DEBUG
+    # }
 
-    # モデルのパラメータ
-    model_params = {
-        'boosting_type': 'gbdt',
-        'objective': 'regression',
-        'metric': 'mae',
-        'num_round': 5000,
-        'early_stopping_rounds': 1000,
-        'verbose': 1000,
-        'random_state': 999
-    }
-    if DEBUG is True:
-        model_params['num_round'] = 1000
+    # # モデルのパラメータ
+    # model_params = {
+    #     'boosting_type': 'gbdt',
+    #     'objective': 'regression',
+    #     'metric': 'mae',
+    #     'num_round': 5000,
+    #     'early_stopping_rounds': 1000,
+    #     'verbose': 1000,
+    #     'random_state': 999
+    # }
+    # if DEBUG is True:
+    #     model_params['num_round'] = 1000
     
-    runner = Runner(ModelLGB, features, setting, model_params, cv, FEATURE_DIR_NAME, out_dir_name)
+    # runner = Runner(ModelLGB, features, setting, model_params, cv, FEATURE_DIR_NAME, out_dir_name)
 
-    use_feature_name = runner.get_feature_name() # 今回の学習で使用する特徴量名を取得
+    # use_feature_name = runner.get_feature_name() # 今回の学習で使用する特徴量名を取得
 
-    # モデルのconfigをjsonで保存
-    value_list = [features, use_feature_name, model_params, cv, setting]
-    save_model_config(key_list, value_list, out_dir_name, run_name)
+    # # モデルのconfigをjsonで保存
+    # value_list = [features, use_feature_name, model_params, cv, setting]
+    # save_model_config(key_list, value_list, out_dir_name, run_name)
 
-    # runner.visualize_corr() # 相関係数を可視化して保存
-    if cv.get('method') == 'None':
-        runner.run_train_all()  # 全データで学習
-        runner.run_predict_all()  # 推論
-    else:
-        runner.run_train_cv()  # 学習
-        ModelLGB.calc_feature_importance(out_dir_name, run_name, use_feature_name)  # feature_importanceを計算
-        runner.run_predict_cv()  # 推論
+    # # runner.visualize_corr() # 相関係数を可視化して保存
+    # if cv.get('method') == 'None':
+    #     runner.run_train_all()  # 全データで学習
+    #     runner.run_predict_all()  # 推論
+    # else:
+    #     runner.run_train_cv()  # 学習
+    #     ModelLGB.calc_feature_importance(out_dir_name, run_name, use_feature_name)  # feature_importanceを計算
+    #     runner.run_predict_cv()  # 推論
 
-    Submission.create_submission(run_name, out_dir_name, setting.get('target'), setting.get('task_type'))  # submit作成
+    # Submission.create_submission(run_name, out_dir_name, setting.get('target'), setting.get('task_type'))  # submit作成
 
-    # upload to GCS
-    if DEBUG == True:
-        directry_path = f'../models/{run_name}/'
-        upload_from_directory(bucket, directry_path, BLOB_NAME)
+    # # upload to GCS
+    # if DEBUG == True:
+    #     directry_path = f'../models/{run_name}/'
+    #     upload_from_directory(bucket, directry_path, BLOB_NAME)
 
 
     # # ######################################################
@@ -305,6 +307,68 @@ if __name__ == '__main__':
     #     upload_from_directory(bucket, directry_path, BLOB_NAME)
     
     # ######################################################
+
+
+
+
+    # ######################################################
+    # 学習・推論 LSTM ###################################
+
+    # run nameの設定
+    run_name = 'lstm'
+    run_name = run_name + suffix
+    out_dir_name = MODEL_DIR_NAME + run_name + '/'
+
+    # exist_check(MODEL_DIR_NAME, run_name)  # 実行可否確認
+    my_makedirs(out_dir_name)  # runディレクトリの作成。ここにlogなどが吐かれる
+
+    # 諸々の設定
+    setting = {
+        'run_name': run_name,  # run名
+        'feature_directory': FEATURE_DIR_NAME,  # 特徴量の読み込み先ディレクトリ
+        'target': target,  # 目的変数
+        'calc_shap': False,  # shap値を計算するか否か
+        'save_train_pred': True,  # trainデータでの推論値を保存するか否か
+        'task_type': 'regression',
+        'debug': DEBUG
+    }
+
+    model_params = {
+        'task_type': 'regression',
+        'epochs': 100,
+        'batch_size': 999,
+        'learning_rate': 0.1,
+        'momentum': 0.8,
+        'optimizer': 'SGD'
+    }
+
+    if DEBUG is True:
+        model_params['epochs'] = 3
+    
+    runner = Runner(ModelLSTM, features, setting, model_params, cv, FEATURE_DIR_NAME, out_dir_name)
+
+     # 今回の学習で使用する特徴量名を取得
+
+    # モデルのconfigをjsonで保存
+    value_list = [features, runner.use_feature_name, model_params, cv, setting]
+    save_model_config(key_list, value_list, out_dir_name, run_name)
+
+    # runner.visualize_corr() # 相関係数を可視化して保存
+    if cv.get('method') == 'None':
+        runner.run_train_all()  # 全データで学習
+        runner.run_predict_all()  # 推論
+    else:
+        runner.run_train_cv()  # 学習
+        # ModelLGB.calc_feature_importance(out_dir_name, run_name, use_feature_name)  # feature_importanceを計算
+        runner.run_predict_cv()  # 推論
+
+    Submission.create_submission(run_name, out_dir_name, setting.get('target'), setting.get('task_type'))  # submit作成
+
+    # upload to GCS
+    if DEBUG == True:
+        directry_path = f'../models/{run_name}/'
+        upload_from_directory(bucket, directry_path, BLOB_NAME)
+
 
 
     # ######################################################

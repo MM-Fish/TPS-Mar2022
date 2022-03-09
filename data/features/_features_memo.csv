@@ -1,4 +1,5 @@
 特徴量,メモ
+accum_minutes,積算分
 all_raw_data,全初期データ
 congestion,種名。今回の目的変数。
 coordinate,座標

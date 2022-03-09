@@ -89,9 +89,20 @@ class accum_minutes(Feature):
         col = 'time'
         train[col] = pd.to_datetime(train[col])
         self.train['accum_minutes'] = (train[col] - train[col].dt.floor('D')).dt.total_seconds() / 60
-        
+
         test[col] = pd.to_datetime(test[col])
         self.test['accum_minutes'] = (test[col] - test[col].dt.floor('D')).dt.total_seconds() / 60
+
+        # テストデータが午後のみのため、午前と午後に区別する
+        self.train['pm'] = 0
+        self.train.loc[self.train['accum_minutes']>=720, 'pm'] = 1
+        self.train.loc[self.train['accum_minutes']>=720, 'accum_minutes'] = self.train.loc[self.train['accum_minutes']>=720, 'accum_minutes'] - 720
+        self.train['accum_minutes'] = self.train['accum_minutes'].map(int)
+        
+        self.test['pm'] = 0
+        self.test.loc[self.test['accum_minutes']>=720, 'pm'] = 1
+        self.test.loc[self.test['accum_minutes']>=720, 'accum_minutes'] = self.test.loc[self.test['accum_minutes']>=720, 'accum_minutes'] - 720
+        self.test['accum_minutes'] = self.test['accum_minutes'].map(int)
         create_memo('accum_minutes', '積算分')
 
 class x_y_direction(Feature):

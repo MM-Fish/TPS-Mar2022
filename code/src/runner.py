@@ -7,6 +7,7 @@ import seaborn as sns
 import sys,os
 import shap
 import yaml
+import random
 from models.learning.model import Model
 from tqdm import tqdm, tqdm_notebook
 from sklearn.metrics import log_loss, mean_squared_error, mean_squared_log_error, mean_absolute_error, accuracy_score
@@ -141,8 +142,9 @@ class Runner:
                 print('CVメソッドが正しくないため終了します')
                 sys.exit(0)
 
-            tr_x, tr_y = train_x.iloc[tr_idx], train_y.iloc[tr_idx]
-            va_x, va_y = train_x.iloc[va_idx], train_y.iloc[va_idx]
+            ##################### numpyにしているため
+            tr_x, tr_y = train_x[tr_idx], train_y[tr_idx]
+            va_x, va_y = train_x[va_idx], train_y[va_idx]
 
             # 学習を行う
             model = self.build_model(i_fold)
@@ -162,7 +164,7 @@ class Runner:
                 elif self.task_type == 'multiclass':
                     va_pred = np.argmax(va_pred, axis=1)
                         
-            score = self.metrics(va_y, va_pred)
+            score = self.metrics(va_y.squeeze().reshape(-1, 1).squeeze(), va_pred)
 
             # モデル、インデックス、予測値、評価を返す
             return model, va_idx, va_pred, score
@@ -310,6 +312,9 @@ class Runner:
         dfs = [pd.read_pickle(self.feature_dir_name + f'{f}_train.pkl') for f in self.features]
         df = pd.concat(dfs, axis=1)
 
+        # ########feature_nameの取得方法を考える
+        self.use_feature_name = df.columns.values.tolist()
+
         # 特定の値を除外して学習させる場合 -------------
         # self.remove_train_index = df[(df['age']==64) | (df['age']==66) | (df['age']==67)].index
         # df = df.drop(index = self.remove_train_index)
@@ -331,24 +336,45 @@ class Runner:
         return pd.Series(train_y[self.target])
 
     # 多クラス分類のデータ分割
+    ####################データ型直す nnのために numpyにする
     def load_train(self) -> Tuple[pd.DataFrame, pd.Series]:
         train_x, train_y = self.load_x_train(), self.load_y_train()
+        train_x, train_y = train_x.loc[~train_x.isnull().any(axis=1), :], train_y.loc[~train_x.isnull().any(axis=1)]
+        print(len(train_x), len(train_y))
+
+        ############ (要修正)モデルに持たせる？
+        train_x = train_x.sort_values(['month', 'day', 'x_y_direction', 'pm', 'accum_minutes']).drop(['x_y_direction'], axis=1)
+        size_name = len(train_x['accum_minutes'].unique())
+        train_x = np.array(train_x).reshape(-1, size_name, train_x.shape[-1])
+        train_y = train_y.to_numpy().reshape(-1, size_name)
+
         if self.debug is True:
-            """サンプル数を200程度にする
+            """サンプル数を50程度にする
             """
-            test_size = 200 / len(train_y)
-            _, train_x, _, train_y = train_test_split(train_x, train_y, test_size=test_size, stratify=train_y)
-            return train_x, train_y
+            idx = random.sample(range(0, len(train_x)), 50)
+            return train_x[idx], train_y[idx]
         else:
             # return train_x, train_y
-            return train_x.loc[~train_x.isnull().any(axis=1), :], train_y.loc[~train_x.isnull().any(axis=1)]
+            # 欠損値を除去する場合
+            return train_x, train_y
         
     def load_x_test(self) -> pd.DataFrame:
         """テストデータの特徴量を読み込む
         :return: テストデータの特徴量
         """
         dfs = [pd.read_pickle(self.feature_dir_name + f'{f}_test.pkl') for f in self.features]
-        return pd.concat(dfs, axis=1)
+
+        test_x = pd.concat(dfs, axis=1)
+        test_x = test_x.sort_values(['month', 'day', 'x_y_direction', 'pm', 'accum_minutes']).drop(['x_y_direction'], axis=1)
+        size_name = len(test_x['accum_minutes'].unique())
+        test_x = np.array(test_x).reshape(-1, size_name, test_x.shape[-1])
+        if self.debug is True:
+            """サンプル数を20程度にする
+            """
+            idx = random.sample(range(0, len(test_x)), 20)
+            return test_x[idx]
+        else:
+            return test_x
 
 
     def load_stratify_or_group_target(self) -> pd.Series:
