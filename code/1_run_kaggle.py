@@ -21,7 +21,7 @@ from src.models.learning.model_lda import ModelLDA
 CONFIG_FILE = '../configs/config.yaml'
 
 with open(CONFIG_FILE) as file:
-    yml = yaml.load(file)
+    yml = yaml.safe_load(file)
 MODEL_DIR_NAME = yml['SETTING']['MODEL_DIR_NAME']
 FEATURE_DIR_NAME = yml['SETTING']['FEATURE_DIR_NAME']
 

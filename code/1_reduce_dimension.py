@@ -24,7 +24,7 @@ warnings.filterwarnings("ignore")
 
 CONFIG_FILE = '../configs/config.yaml'
 with open(CONFIG_FILE) as file:
-    yml = yaml.load(file)
+    yml = yaml.safe_load(file)
 
 RAW_DIR_NAME = yml['SETTING']['RAW_DIR_NAME']  # 特徴量生成元のRAWデータ格納場所
 EDA_DIR_NAME = yml['SETTING']['EDA_DIR_NAME']  # EDAに関する情報を格納場所

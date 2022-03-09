@@ -5,7 +5,7 @@ import yaml
 CONFIG_FILE = '../configs/config.yaml'
 
 with open(CONFIG_FILE) as file:
-    yml = yaml.load(file)
+    yml = yaml.safe_load(file)
 FEATURE_DIR_NAME = yml['SETTING']['FEATURE_DIR_NAME']
 
 if __name__ == '__main__':
