@@ -118,7 +118,7 @@ class diff_days(Feature):
     def create_features(self):
         train['time'] = pd.to_datetime(train['time'])
         test['time'] = pd.to_datetime(test['time'])
-        for i in [1, 2, 3]:
+        for i in [1]:
             train['diff'] = train['time'] + timedelta(days=i)
             train['time_categorical'] = train['time'].map(lambda x: str(x)+ '_') + train['x'].map(lambda x: str(x) + '_') + train['y'].map(lambda x: str(x) + '_') + train['direction']
             train['diff_categorical'] = train['diff'].map(lambda x: str(x)+ '_') + train['x'].map(lambda x: str(x) + '_') + train['y'].map(lambda x: str(x) + '_') + train['direction']
@@ -164,7 +164,7 @@ if __name__ == '__main__':
     create_memo('特徴量', 'メモ')
 
     args = get_arguments()
-    train = pd.read_csv(RAW_DIR_NAME + 'train.csv')
+    train = pd.read_csv(RAW_DIR_NAME + 'train_imputation.csv')
     test = pd.read_csv(RAW_DIR_NAME + 'test.csv')
 
     # globals()でtrain,testのdictionaryを渡す

@@ -339,12 +339,24 @@ class Runner:
     ####################データ型直す nnのために numpyにする
     def load_train(self) -> Tuple[pd.DataFrame, pd.Series]:
         train_x, train_y = self.load_x_train(), self.load_y_train()
-        train_x, train_y = train_x.loc[~train_x.isnull().any(axis=1), :], train_y.loc[~train_x.isnull().any(axis=1)]
-        print(len(train_x), len(train_y))
+        
+        # 欠損値除去
+        # train_x, train_y = train_x.loc[~train_x.isnull().any(axis=1), :], train_y.loc[~train_x.isnull().any(axis=1)]
+
+        # 欠損している日ごと除去
+        train_x['date'] = train_x['month'].map(str) + '_' + train_x['day'].map(str)
+        keep_index = (train_x['diff_1days'].isna()) | (train_y.isna())
+        drop_dates = train_x.loc[keep_index, 'date'].unique()
+        train_x = train_x.query('date not in @drop_dates').drop(['date'], axis=1)
+        
+        # 午後のみデータ使用
+        train_x = train_x.query('pm==1')
+        train_y = train_y[train_x.index]
 
         ############ (要修正)モデルに持たせる？
         train_x = train_x.sort_values(['month', 'day', 'x_y_direction', 'pm', 'accum_minutes']).drop(['x_y_direction'], axis=1)
         size_name = len(train_x['accum_minutes'].unique())
+        train_x = pd.get_dummies(train_x)
         train_x = np.array(train_x).reshape(-1, size_name, train_x.shape[-1])
         train_y = train_y.to_numpy().reshape(-1, size_name)
 
