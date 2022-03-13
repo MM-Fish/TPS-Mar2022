@@ -9,5 +9,6 @@ git_token
 /data/external
 /data/raw/*.csv
 /data/submission/*.csv
+/data/features/*
 /models
 /edas

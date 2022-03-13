@@ -164,7 +164,11 @@ class Runner:
                 elif self.task_type == 'multiclass':
                     va_pred = np.argmax(va_pred, axis=1)
                         
-            score = self.metrics(va_y.squeeze().reshape(-1, 1).squeeze(), va_pred)
+            ############ (要修正)モデルに持たせたい
+            if self.model_cls.__name__=='ModelLSTM':
+                score = self.metrics(va_y.squeeze().reshape(-1, 1).squeeze(), va_pred)
+            else:
+                score = self.metrics(va_y, va_pred)
 
             # モデル、インデックス、予測値、評価を返す
             return model, va_idx, va_pred, score
@@ -340,25 +344,28 @@ class Runner:
     def load_train(self) -> Tuple[pd.DataFrame, pd.Series]:
         train_x, train_y = self.load_x_train(), self.load_y_train()
         
-        # 欠損値除去
-        # train_x, train_y = train_x.loc[~train_x.isnull().any(axis=1), :], train_y.loc[~train_x.isnull().any(axis=1)]
+        ############ (要修正)モデルに持たせたい
+        if self.model_cls.__name__=='ModelLSTM':
+            # 欠損している日ごと除去
+            train_x['date'] = train_x['month'].map(str) + '_' + train_x['day'].map(str)
+            drop_index = (train_x['diff_1days'].isna()) | (train_y.isna())
+            drop_dates = train_x.loc[drop_index, 'date'].unique()
+            train_x = train_x.query('date not in @drop_dates').drop(['date'], axis=1)
+            
+            # 午後のみデータ使用
+            train_x = train_x.query('pm==1')
+            train_y = train_y[train_x.index]
 
-        # 欠損している日ごと除去
-        train_x['date'] = train_x['month'].map(str) + '_' + train_x['day'].map(str)
-        keep_index = (train_x['diff_1days'].isna()) | (train_y.isna())
-        drop_dates = train_x.loc[keep_index, 'date'].unique()
-        train_x = train_x.query('date not in @drop_dates').drop(['date'], axis=1)
-        
-        # 午後のみデータ使用
-        train_x = train_x.query('pm==1')
-        train_y = train_y[train_x.index]
+            train_x = train_x.sort_values(['month', 'day', 'x_y_direction', 'pm', 'accum_minutes']).drop(['x_y_direction'], axis=1)
+            size_name = len(train_x['accum_minutes'].unique())
+            train_x = np.array(train_x).reshape(-1, size_name, train_x.shape[-1])
+            train_y = train_y.to_numpy().reshape(-1, size_name)
+        else:
+            # 欠損値除去
+            keep_index = ~train_x.isna().any(axis=1) & ~train_y.isna()
+            train_x, train_y = train_x.loc[keep_index, :], train_y[keep_index]
+            train_x, train_y = np.array(train_x), np.array(train_y)
 
-        ############ (要修正)モデルに持たせる？
-        train_x = train_x.sort_values(['month', 'day', 'x_y_direction', 'pm', 'accum_minutes']).drop(['x_y_direction'], axis=1)
-        size_name = len(train_x['accum_minutes'].unique())
-        train_x = pd.get_dummies(train_x)
-        train_x = np.array(train_x).reshape(-1, size_name, train_x.shape[-1])
-        train_y = train_y.to_numpy().reshape(-1, size_name)
 
         if self.debug is True:
             """サンプル数を50程度にする
@@ -375,11 +382,16 @@ class Runner:
         :return: テストデータの特徴量
         """
         dfs = [pd.read_pickle(self.feature_dir_name + f'{f}_test.pkl') for f in self.features]
-
         test_x = pd.concat(dfs, axis=1)
-        test_x = test_x.sort_values(['month', 'day', 'x_y_direction', 'pm', 'accum_minutes']).drop(['x_y_direction'], axis=1)
-        size_name = len(test_x['accum_minutes'].unique())
-        test_x = np.array(test_x).reshape(-1, size_name, test_x.shape[-1])
+
+        ############ (要修正)モデルに持たせたい
+        if self.model_cls.__name__=='ModelLSTM':
+            test_x = test_x.sort_values(['month', 'day', 'x_y_direction', 'pm', 'accum_minutes']).drop(['x_y_direction'], axis=1)
+            size_name = len(test_x['accum_minutes'].unique())
+            test_x = np.array(test_x).reshape(-1, size_name, test_x.shape[-1])
+        else:
+            test_x = np.array(test_x)
+
         if self.debug is True:
             """サンプル数を20程度にする
             """

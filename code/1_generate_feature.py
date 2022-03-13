@@ -1,4 +1,5 @@
 from copyreg import pickle
+from dataclasses import replace
 import pandas as pd
 import numpy as np
 import sys,os
@@ -11,6 +12,11 @@ import warnings
 sys.path.append('./src')
 from src.base import Feature, get_arguments, generate_features
 from datetime import timedelta
+from sklearn.model_selection import KFold, StratifiedKFold, GroupKFold, train_test_split
+
+from xfeat import SelectCategorical, LabelEncoder, Pipeline, ConcatCombination, SelectNumerical, \
+    ArithmeticCombinations, TargetEncoder, aggregation, GBDTFeatureSelector, GBDTFeatureExplorer
+
 
 sys.path.append(os.pardir)
 sys.path.append('../..')
@@ -52,14 +58,48 @@ class coordinate(Feature):
         self.train['y'] = train['y']
         create_memo('coordinate', '座標')
 
-############
-## one-hot encoding
-# 方角
-class direction(Feature):
+## カテゴリカル変数の結合
+# 方角と座標
+class x_y_direction(Feature):
     def create_features(self):
-        self.train = pd.get_dummies(train['direction'])
-        self.train = pd.get_dummies(train['direction'])
-        create_memo('direction', '方角')
+        # 結合しないcolsを明示
+        exclude_cols = ['time']
+        train['x'] = train['x'].map(str)
+        train['y'] = train['y'].map(str)
+        test['x'] = test['x'].map(str)
+        test['y'] = test['y'].map(str)
+        encoder = Pipeline([
+            SelectCategorical(exclude_cols=exclude_cols),
+            ConcatCombination(
+                drop_origin=True,
+                output_suffix="_re", 
+                r=3),
+        ])
+        self.train = encoder.fit_transform(train)
+        self.test = encoder.transform(test)
+        create_memo('x_y_direction', 'x_y_direction')
+
+## 数値変数の結合
+# 座標
+class add_x_y(Feature):
+    def create_features(self):
+        input_cols = ['x', 'y']
+        exclude_cols = ['congestion']
+        train['x'] = train['x'].map(int)
+        train['y'] = train['y'].map(int)
+        test['x'] = test['x'].map(int)
+        test['y'] = test['y'].map(int)
+        encoder = Pipeline([
+            SelectNumerical(exclude_cols=exclude_cols),
+            ArithmeticCombinations(
+                input_cols=input_cols,
+                drop_origin=True, 
+                operator="+", 
+                r=2),
+        ])
+        self.train = encoder.fit_transform(train)
+        self.test = encoder.transform(test)
+        create_memo('add_x_y', 'xとyの加算')
 
 # 時間
 class datetime_element(Feature):
@@ -84,6 +124,7 @@ class datetime_element(Feature):
         # self.test['second'] = test[col].dt.second
         create_memo('time', '年、月、週、日、時間、分、秒')
 
+# 1日の積算の分
 class accum_minutes(Feature):
     def create_features(self):
         col = 'time'
@@ -92,28 +133,33 @@ class accum_minutes(Feature):
 
         test[col] = pd.to_datetime(test[col])
         self.test['accum_minutes'] = (test[col] - test[col].dt.floor('D')).dt.total_seconds() / 60
+        create_memo('accum_minutes', '積算分')
+
+
+# 0.5日の積算の分
+class accum_minutes_half_day(Feature):
+    def create_features(self):
+        col = 'time'
+        train[col] = pd.to_datetime(train[col])
+        self.train['accum_minutes_half_day'] = (train[col] - train[col].dt.floor('D')).dt.total_seconds() / 60
+
+        test[col] = pd.to_datetime(test[col])
+        self.test['accum_minutes_half_day'] = (test[col] - test[col].dt.floor('D')).dt.total_seconds() / 60
 
         # テストデータが午後のみのため、午前と午後に区別する
         self.train['pm'] = 0
-        self.train.loc[self.train['accum_minutes']>=720, 'pm'] = 1
-        self.train.loc[self.train['accum_minutes']>=720, 'accum_minutes'] = self.train.loc[self.train['accum_minutes']>=720, 'accum_minutes'] - 720
-        self.train['accum_minutes'] = self.train['accum_minutes'].map(int)
+        self.train.loc[self.train['accum_minutes_half_day']>=720, 'pm'] = 1
+        self.train.loc[self.train['accum_minutes_half_day']>=720, 'accum_minutes_half_day'] = self.train.loc[self.train['accum_minutes_half_day']>=720, 'accum_minutes_half_day'] - 720
+        self.train['accum_minutes_half_day'] = self.train['accum_minutes_half_day'].map(int)
         
         self.test['pm'] = 0
-        self.test.loc[self.test['accum_minutes']>=720, 'pm'] = 1
-        self.test.loc[self.test['accum_minutes']>=720, 'accum_minutes'] = self.test.loc[self.test['accum_minutes']>=720, 'accum_minutes'] - 720
-        self.test['accum_minutes'] = self.test['accum_minutes'].map(int)
-        create_memo('accum_minutes', '積算分')
+        self.test.loc[self.test['accum_minutes_half_day']>=720, 'pm'] = 1
+        self.test.loc[self.test['accum_minutes_half_day']>=720, 'accum_minutes_half_day'] = self.test.loc[self.test['accum_minutes_half_day']>=720, 'accum_minutes_half_day'] - 720
+        self.test['accum_minutes_half_day'] = self.test['accum_minutes_half_day'].map(int)
+        create_memo('accum_minutes_half_day', '積算分(半日)')
 
-class x_y_direction(Feature):
-    def create_features(self):
-        self.train['x_y_direction'] = train['x'].map(lambda x: str(x) + '_') + train['y'].map(lambda x: str(x) + '_') + train['direction']
-        
-        self.test['x_y_direction'] = test['x'].map(lambda x: str(x) + '_') + test['y'].map(lambda x: str(x) + '_') + test['direction']
-        create_memo('x_y_direction', 'x_y_direction')
-
-############
-## 時系列差分
+## 差分
+## 時系列差(1階差分)分
 class diff_days(Feature):
     def create_features(self):
         train['time'] = pd.to_datetime(train['time'])
@@ -127,7 +173,137 @@ class diff_days(Feature):
 
             test['time_categorical'] = test['time'].map(lambda x: str(x)+ '_') + test['x'].map(lambda x: str(x) + '_') + test['y'].map(lambda x: str(x) + '_') + test['direction']
             df = pd.merge(test[['time_categorical']], train[['diff_categorical', 'congestion']], left_on='time_categorical', right_on='diff_categorical', how='left')
+            self.test[f'diff_{i}days'] = df['congestion'] 
+        create_memo('diff_days', '1日差分')
+
+## 差分
+## 時系列差分(1~3階差分)
+class diff_3days(Feature):
+    def create_features(self):
+        train['time'] = pd.to_datetime(train['time'])
+        test['time'] = pd.to_datetime(test['time'])
+        for i in [1, 2, 3]:
+            train['diff'] = train['time'] + timedelta(days=i)
+            train['time_categorical'] = train['time'].map(lambda x: str(x)+ '_') + train['x'].map(lambda x: str(x) + '_') + train['y'].map(lambda x: str(x) + '_') + train['direction']
+            train['diff_categorical'] = train['diff'].map(lambda x: str(x)+ '_') + train['x'].map(lambda x: str(x) + '_') + train['y'].map(lambda x: str(x) + '_') + train['direction']
+            df = pd.merge(train[['time_categorical', 'congestion']], train[['diff_categorical', 'congestion']], left_on='time_categorical', right_on='diff_categorical', how='left')
+            self.train[f'diff_{i}days'] = df['congestion_y']
+
+            test['time_categorical'] = test['time'].map(lambda x: str(x)+ '_') + test['x'].map(lambda x: str(x) + '_') + test['y'].map(lambda x: str(x) + '_') + test['direction']
+            df = pd.merge(test[['time_categorical']], train[['diff_categorical', 'congestion']], left_on='time_categorical', right_on='diff_categorical', how='left')
             self.test[f'diff_{i}days'] = df['congestion']
+        create_memo('diff_days', '3日差分')
+
+## one-hot encoding
+# 方角
+class direction_dummies(Feature):
+    def create_features(self):
+        self.train = pd.get_dummies(train['direction'])
+        self.test = pd.get_dummies(test['direction'])
+        create_memo('direction', '方角')
+
+## one-hot encoding
+# 方角と座標
+class x_y_direction_dummies(Feature):
+    def create_features(self):
+        train['x_y_direction'] = train['x'].map(lambda x: str(x) + '_') + train['y'].map(lambda x: str(x) + '_') + train['direction']        
+        test['x_y_direction'] = test['x'].map(lambda x: str(x) + '_') + test['y'].map(lambda x: str(x) + '_') + test['direction']
+        self.train = pd.get_dummies(train['x_y_direction'])
+        self.test = pd.get_dummies(test['x_y_direction'])
+        create_memo('x_y_direction', 'x,y,directionを結合')
+
+## 統計量作成
+# 集約して差分をとる
+class agg_shift_by_date(Feature):
+    def create_features(self):
+        time_col = 'time'
+        train[time_col] = pd.to_datetime(train[time_col])        
+        train['date'] = train[time_col].dt.date
+        train['pm'] = 0
+        train.loc[train[time_col].dt.hour>=12, 'pm'] = 1
+
+        test[time_col] = pd.to_datetime(test[time_col])
+        test['date'] = test[time_col].dt.date
+        test['pm'] = 0
+        test.loc[test[time_col].dt.hour>=12, 'pm'] = 1
+
+        dropped_cols_train, dropped_cols_test = train.columns, test.columns
+        agg_cols = ['min', 'max', 'mean', 'std']
+        cols_set = [['date'], ['date', 'pm'], ['date', 'direction', 'x', 'y']]
+
+        self.train, self.test = train.copy(), test.copy()
+
+        for cols in cols_set:
+            grp_df = train.groupby(cols)['congestion'].agg(agg_cols)
+            
+            # 過去のデータの統計量を特徴量とする
+            for i in [1, 2, 3]:
+                grp_df_shift = grp_df.copy()
+                col_name = '_'.join(cols)
+                grp_df_shift.columns = [f'{col_name}_shift{i}_{c}' for c in grp_df_shift.columns]
+                grp_df_shift = grp_df_shift.reset_index()
+                grp_df_shift['date'] = grp_df_shift['date'] + timedelta(days=i)
+
+                self.train = self.train.merge(grp_df_shift, on=cols, how='left')
+                self.test = self.test.merge(grp_df_shift, on=cols, how='left')
+        
+        # 不要なカラム削除
+        self.train.drop(dropped_cols_train, axis=1, inplace=True)
+        self.test.drop(dropped_cols_test, axis=1, inplace=True)
+        create_memo('agg_shift_by_date', f'{cols_set}で集約&差分')
+
+
+## target encoding
+# 時間と方角について
+class target_encoded_feats(Feature):
+    def create_features(self):
+        fold = KFold(n_splits=5, shuffle=False)
+        initial_train_cols = train.columns
+        initial_test_cols = test.columns
+        col = 'time'
+        categorical_cols = ['direction', 'hour', 'x', 'y']
+        target_col = 'congestion'
+        train[col] = pd.to_datetime(train[col])
+        train['hour'] = train[col].dt.hour
+        train['hour'] = train['hour'].map(str)
+        train['x'] = train['x'].map(str)
+        train['y'] = train['y'].map(str)
+
+        test[col] = pd.to_datetime(test[col])
+        test['hour'] = test[col].dt.hour
+        test['hour'] = test['hour'].map(str)
+        test['x'] = test['x'].map(str)
+        test['y'] = test['y'].map(str)
+        encoder = TargetEncoder(
+            input_cols=categorical_cols,
+            target_col=target_col,
+            fold=fold,
+            output_suffix="_re"
+            )
+
+        self.train = encoder.fit_transform(train).drop(initial_train_cols, axis=1)
+        self.test = encoder.transform(test).drop(initial_test_cols, axis=1)
+
+
+# ## 特徴量集約
+# # 差分無し
+# class agg_shift_by_date(Feature):
+#   def create_features(self):
+#       dropped_cols_train, dropped_cols_test = train.columns, test.columns
+#       agg_cols = ['min', 'max', 'mean', 'std']
+#       cols_set = [['date'], ['date', 'pm'], ['date', 'direction', 'x', 'y']]
+
+#       for cols in cols_set:
+#           grp_df = train.groupby(cols)['congestion'].agg(agg_cols)
+#           col_name = '_'.join(cols)
+#           grp_df.columns = [f'{col_name}_shift{i}_{c}' for c in grp_df.columns]
+#           train = train.merge(grp_df, on=cols, how='left')
+#           test = test.merge(grp_df, on=cols, how='left')          
+
+#       # 不要なカラム削除
+#       self.train = train.drop(dropped_cols_train, axis=1)
+#       self.test = test.drop(dropped_cols_test, axis=1)
+    #   create_memo('agg_shift_by_date', f'{cols_set}で集約')
 
 
 # # 学習モデルを特徴量データとして追加
@@ -164,7 +340,8 @@ if __name__ == '__main__':
     create_memo('特徴量', 'メモ')
 
     args = get_arguments()
-    train = pd.read_csv(RAW_DIR_NAME + 'train_imputation.csv')
+    train = pd.read_csv(RAW_DIR_NAME + 'train.csv')
+    # train = pd.read_csv(RAW_DIR_NAME + 'train_imputation.csv')
     test = pd.read_csv(RAW_DIR_NAME + 'test.csv')
 
     # globals()でtrain,testのdictionaryを渡す

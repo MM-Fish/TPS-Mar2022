@@ -69,10 +69,49 @@ lstm 1回目
 
 （リファクタリング）
 rawデータを変えたい時。今回competationをつけた
-前処理後のデータの情報を取得しないときちんとどのデータを使ったか追えない
+get_dummiesなどをどこで行うか。runnerで処理を行なってしまうと、今のログ設計では使った列を正しく把握出来ない。
+train_x, train_yをnumpyで返すように全体を構成し直したい。
+lstmなどでは、numpyが基本になっているため
 
 (idea)
 congestionの特徴量を使用したい
 前日の最大値、最小値などを使用したい
 同じaccum_minutesの最大値、最小値、平均値
 同じcoordinateの最大値、最小値、平均値
+
+(error)
+kaggle notebookだとtpu、gpuがうまく利用出来ない。
+kerasをバージョンアップしたのが原因？
+```
+2022-03-12 03:06:21.400591: W tensorflow/stream_executor/platform/default/dso_loader.cc:64] Could not load dynamic library 'libcuda.so.1'; dlerror: libcuda.so.1: cannot open shared object file: No such file or directory; LD_LIBRARY_PATH: /opt/conda/lib
+2022-03-12 03:06:21.400655: W tensorflow/stream_executor/cuda/cuda_driver.cc:269] failed call to cuInit: UNKNOWN ERROR (303)
+2022-03-12 03:06:21.400694: I tensorflow/stream_executor/cuda/cuda_diagnostics.cc:156] kernel driver does not appear to be running on this host (3a3b9dcf2352): /proc/driver/nvidia/version does not exist
+2022-03-12 03:06:21.401853: I tensorflow/core/platform/cpu_feature_guard.cc:151] This TensorFlow binary is optimized with oneAPI Deep Neural Network Library (oneDNN) to use the following CPU instructions in performance-critical operations:  AVX2 FMA
+To enable them in other operations, rebuild TensorFlow with the appropriate compiler flags.
+```
+
+## 22/03/13
+(リファクタリング)
+前処理のコードをどこに記載するか
+前処理のデータと通常のデータと両方で特徴量を作成するようにして、フォルダを使い分けるのが良さそう
+
+lgbをダミー変数化、欠損行を補完したデータを使って作成した特徴量
+を使用して提出
+
+(error)
+- shapeが819000になっている
+    欠損行の作成したのち、差分がうまくいっていない？
+
+- 特徴量作成の際にtrainのundefinedエラーが発生する
+    特徴量作成クラス内でtrain=, test=をしてしまうと、train, testがglobal変数を参照出来なくなる？
+
+### 新規特徴量
+- カテゴリカル変数×数値変数の特徴量エンジニアリングの実装
+    時間とカテゴリカル変数をgroupbyして、congestionの最大値、最小値、平均、標準偏差
+
+
+今週やることをkanbanflowに作成
+
+## 22/03/14
+xfeatの導入
+https://acro-engineer.hatenablog.com/entry/2020/12/15/120000
