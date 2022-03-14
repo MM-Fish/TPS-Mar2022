@@ -106,7 +106,7 @@ class datetime_element(Feature):
     def create_features(self):
         col = 'time'
         train[col] = pd.to_datetime(train[col])
-        self.train['year'] = train[col].dt.year
+        # self.train['year'] = train[col].dt.year
         self.train['month'] = train[col].dt.month
         self.train['weekday'] = train[col].dt.weekday
         self.train['day'] = train[col].dt.day
@@ -115,7 +115,7 @@ class datetime_element(Feature):
         # self.train['second'] = train[col].dt.second
 
         test[col] = pd.to_datetime(test[col])
-        self.test['year'] = test[col].dt.year
+        # self.test['year'] = test[col].dt.year
         self.test['month'] = test[col].dt.month
         self.test['weekday'] = test[col].dt.weekday
         self.test['day'] = test[col].dt.day
@@ -283,6 +283,7 @@ class target_encoded_feats(Feature):
 
         self.train = encoder.fit_transform(train).drop(initial_train_cols, axis=1)
         self.test = encoder.transform(test).drop(initial_test_cols, axis=1)
+        create_memo('target_encoding', f'{categorical_cols}でtarget_encoding')
 
 
 # ## 特徴量集約
