@@ -119,11 +119,13 @@ if __name__ == '__main__':
 
     # pklからロードする特徴量の指定
     features = [
-        "diff_3days",
+        "shift_3days",
         "datetime_element",
         "accum_minutes",
         "x_y_direction_dummies",
-        "agg_shift_by_date"
+        "agg_shift_by_date",
+        "rolling_days",
+        "diff_3days"
         ]
     target = 'congestion'
 
@@ -362,7 +364,7 @@ if __name__ == '__main__':
     #     runner.run_predict_all()  # 推論
     # else:
     #     runner.run_train_cv()  # 学習
-    #     # ModelLGB.calc_feature_importance(out_dir_name, run_name, runner.use_feature_name)  # feature_importanceを計算
+    #     runner.model_cls.calc_loss_curve(out_dir_name, run_name)  # loss_curveを出力
     #     runner.run_predict_cv()  # 推論
 
     # Submission.create_submission(run_name, out_dir_name, setting.get('target'), setting.get('task_type'))  # submit作成

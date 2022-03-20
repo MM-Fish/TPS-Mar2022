@@ -114,4 +114,22 @@ lgbをダミー変数化、欠損行を補完したデータを使って作成�
 
 ## 22/03/14
 xfeatの導入
+参考ページ
 https://acro-engineer.hatenablog.com/entry/2020/12/15/120000
+
+リポジトリ
+https://github.com/pfnet-research/xfeat/blob/b199c3cdacef408b3d2b1d920b22c243cfe0667c/xfeat/num_encoder/_arithmetic_combinations.py
+
+## 22/03/17
+imputationデータ
+欠損行を補完したデータの結果があまり伸びないので、データの処理がうまくいっている確認した
+
+## 22/03/20
+差分、移動平均とshfitのクラスを作成した
+
+(point)
+線形グラフから時間的なずれよりも、座標のずれの方がcongestionに与える影響は大きい
+移動平均は平均よりも中央値の方が良い
+50日移動平均のスコアの違い
+- 中央値：4.935
+- 平均値：5.047

@@ -27,7 +27,7 @@ class PlotSeries5axis(FigurePlot):
         row_categorical_uniques = self.data[self.row].unique()
         n_col = len(col_categorical_uniques)
         n_row = len(row_categorical_uniques)
-        fig, axes = plt.subplots(n_row, n_col, figsize=(n_col*5, n_row*5))
+        _, axes = plt.subplots(n_row, n_col, figsize=(n_col*5, n_row*5))
         for i, col_v in tqdm(enumerate(col_categorical_uniques)):
             data = self.data.loc[self.data[self.col]==col_v, :]
             for j, row_v in enumerate(data[self.row].unique()):
@@ -61,7 +61,7 @@ class PlotSeries4axis(FigurePlot):
     def create_figure(self):
         col_categorical_uniques = self.data[self.col].unique()
         n_col = len(col_categorical_uniques)
-        fig, axes = plt.subplots(1, n_col, figsize=(n_col*5, 5))
+        _, axes = plt.subplots(1, n_col, figsize=(n_col*5, 5))
 
         for i, col_v in tqdm(enumerate(col_categorical_uniques)):
             data = self.train.loc[self.train[self.col]==col_v, :]
@@ -91,7 +91,7 @@ class PlotSeries3axis(FigurePlot):
         self.data = self.train
 
     def create_figure(self):
-        fig, ax = plt.subplots(1, 1, figsize=(10, 10))
+        _, ax = plt.subplots(1, 1, figsize=(10, 10))
         sns.lineplot(data=self.data, x=self.x, y=self.y, hue=self.z, ax=ax, estimator=self.estimator, ci=self.ci)
         ax.legend(loc='upper left')
         if self.is_xlim is True:
@@ -119,7 +119,7 @@ class PlotSeries3axisMultipleFigure(FigurePlot):
     def create_figure(self, params):
         z_uniques = self.data[self.z].unique()
         n_z = len(z_uniques)
-        fig, axes = plt.subplots(1, n_z, figsize=(5*n_z, 5))
+        _, axes = plt.subplots(1, n_z, figsize=(5*n_z, 5))
         for i, v in enumerate(z_uniques):
             sns.lineplot(data=self.data.loc[self.data[self.z]==v, :], x=self.x, y=self.y, ax=axes[i], estimator=self.estimator, ci=self.ci)
             axes[i].legend(loc='upper left')

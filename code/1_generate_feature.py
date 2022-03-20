@@ -31,6 +31,7 @@ with open(CONFIG_FILE) as file:
 RAW_DIR_NAME = yml['SETTING']['RAW_DIR_NAME']  # 特徴量生成元のRAWデータ格納場所
 MODEL_DIR_NAME = yml['SETTING']['MODEL_DIR_NAME']  # 特徴量生成元のRAWデータ格納場所
 Feature.dir = yml['SETTING']['FEATURE_DIR_NAME']  # 生成した特徴量の出力場所
+# Feature.dir = yml['SETTING']['FEATURE_DIR_NAME'] + 'imputation/'
 feature_memo_path = Feature.dir + '_features_memo.csv'
 
 
@@ -104,47 +105,47 @@ class add_x_y(Feature):
 # 時間
 class datetime_element(Feature):
     def create_features(self):
-        col = 'time'
-        train[col] = pd.to_datetime(train[col])
-        # self.train['year'] = train[col].dt.year
-        self.train['month'] = train[col].dt.month
-        self.train['weekday'] = train[col].dt.weekday
-        self.train['day'] = train[col].dt.day
-        self.train['hour'] = train[col].dt.hour
-        self.train['minute'] = train[col].dt.minute
-        # self.train['second'] = train[col].dt.second
+        time_col = 'time'
+        train[time_col] = pd.to_datetime(train[time_col])
+        # self.train['year'] = train[time_col].dt.year
+        self.train['month'] = train[time_col].dt.month
+        self.train['weekday'] = train[time_col].dt.weekday
+        self.train['day'] = train[time_col].dt.day
+        self.train['hour'] = train[time_col].dt.hour
+        self.train['minute'] = train[time_col].dt.minute
+        # self.train['second'] = train[time_col].dt.second
 
-        test[col] = pd.to_datetime(test[col])
-        # self.test['year'] = test[col].dt.year
-        self.test['month'] = test[col].dt.month
-        self.test['weekday'] = test[col].dt.weekday
-        self.test['day'] = test[col].dt.day
-        self.test['hour'] = test[col].dt.hour
-        self.test['minute'] = test[col].dt.minute
-        # self.test['second'] = test[col].dt.second
+        test[time_col] = pd.to_datetime(test[time_col])
+        # self.test['year'] = test[time_col].dt.year
+        self.test['month'] = test[time_col].dt.month
+        self.test['weekday'] = test[time_col].dt.weekday
+        self.test['day'] = test[time_col].dt.day
+        self.test['hour'] = test[time_col].dt.hour
+        self.test['minute'] = test[time_col].dt.minute
+        # self.test['second'] = test[time_col].dt.second
         create_memo('time', '年、月、週、日、時間、分、秒')
 
 # 1日の積算の分
 class accum_minutes(Feature):
     def create_features(self):
-        col = 'time'
-        train[col] = pd.to_datetime(train[col])
-        self.train['accum_minutes'] = (train[col] - train[col].dt.floor('D')).dt.total_seconds() / 60
+        time_col = 'time'
+        train[time_col] = pd.to_datetime(train[time_col])
+        self.train['accum_minutes'] = (train[time_col] - train[time_col].dt.floor('D')).dt.total_seconds() / 60
 
-        test[col] = pd.to_datetime(test[col])
-        self.test['accum_minutes'] = (test[col] - test[col].dt.floor('D')).dt.total_seconds() / 60
+        test[time_col] = pd.to_datetime(test[time_col])
+        self.test['accum_minutes'] = (test[time_col] - test[time_col].dt.floor('D')).dt.total_seconds() / 60
         create_memo('accum_minutes', '積算分')
 
 
 # 0.5日の積算の分
 class accum_minutes_half_day(Feature):
     def create_features(self):
-        col = 'time'
-        train[col] = pd.to_datetime(train[col])
-        self.train['accum_minutes_half_day'] = (train[col] - train[col].dt.floor('D')).dt.total_seconds() / 60
+        time_col = 'time'
+        train[time_col] = pd.to_datetime(train[time_col])
+        self.train['accum_minutes_half_day'] = (train[time_col] - train[time_col].dt.floor('D')).dt.total_seconds() / 60
 
-        test[col] = pd.to_datetime(test[col])
-        self.test['accum_minutes_half_day'] = (test[col] - test[col].dt.floor('D')).dt.total_seconds() / 60
+        test[time_col] = pd.to_datetime(test[time_col])
+        self.test['accum_minutes_half_day'] = (test[time_col] - test[time_col].dt.floor('D')).dt.total_seconds() / 60
 
         # テストデータが午後のみのため、午前と午後に区別する
         self.train['pm'] = 0
@@ -157,42 +158,6 @@ class accum_minutes_half_day(Feature):
         self.test.loc[self.test['accum_minutes_half_day']>=720, 'accum_minutes_half_day'] = self.test.loc[self.test['accum_minutes_half_day']>=720, 'accum_minutes_half_day'] - 720
         self.test['accum_minutes_half_day'] = self.test['accum_minutes_half_day'].map(int)
         create_memo('accum_minutes_half_day', '積算分(半日)')
-
-## 差分
-## 時系列差(1階差分)分
-class diff_days(Feature):
-    def create_features(self):
-        train['time'] = pd.to_datetime(train['time'])
-        test['time'] = pd.to_datetime(test['time'])
-        for i in [1]:
-            train['diff'] = train['time'] + timedelta(days=i)
-            train['time_categorical'] = train['time'].map(lambda x: str(x)+ '_') + train['x'].map(lambda x: str(x) + '_') + train['y'].map(lambda x: str(x) + '_') + train['direction']
-            train['diff_categorical'] = train['diff'].map(lambda x: str(x)+ '_') + train['x'].map(lambda x: str(x) + '_') + train['y'].map(lambda x: str(x) + '_') + train['direction']
-            df = pd.merge(train[['time_categorical', 'congestion']], train[['diff_categorical', 'congestion']], left_on='time_categorical', right_on='diff_categorical', how='left')
-            self.train[f'diff_{i}days'] = df['congestion_y']
-
-            test['time_categorical'] = test['time'].map(lambda x: str(x)+ '_') + test['x'].map(lambda x: str(x) + '_') + test['y'].map(lambda x: str(x) + '_') + test['direction']
-            df = pd.merge(test[['time_categorical']], train[['diff_categorical', 'congestion']], left_on='time_categorical', right_on='diff_categorical', how='left')
-            self.test[f'diff_{i}days'] = df['congestion'] 
-        create_memo('diff_days', '1日差分')
-
-## 差分
-## 時系列差分(1~3階差分)
-class diff_3days(Feature):
-    def create_features(self):
-        train['time'] = pd.to_datetime(train['time'])
-        test['time'] = pd.to_datetime(test['time'])
-        for i in [1, 2, 3]:
-            train['diff'] = train['time'] + timedelta(days=i)
-            train['time_categorical'] = train['time'].map(lambda x: str(x)+ '_') + train['x'].map(lambda x: str(x) + '_') + train['y'].map(lambda x: str(x) + '_') + train['direction']
-            train['diff_categorical'] = train['diff'].map(lambda x: str(x)+ '_') + train['x'].map(lambda x: str(x) + '_') + train['y'].map(lambda x: str(x) + '_') + train['direction']
-            df = pd.merge(train[['time_categorical', 'congestion']], train[['diff_categorical', 'congestion']], left_on='time_categorical', right_on='diff_categorical', how='left')
-            self.train[f'diff_{i}days'] = df['congestion_y']
-
-            test['time_categorical'] = test['time'].map(lambda x: str(x)+ '_') + test['x'].map(lambda x: str(x) + '_') + test['y'].map(lambda x: str(x) + '_') + test['direction']
-            df = pd.merge(test[['time_categorical']], train[['diff_categorical', 'congestion']], left_on='time_categorical', right_on='diff_categorical', how='left')
-            self.test[f'diff_{i}days'] = df['congestion']
-        create_memo('diff_days', '3日差分')
 
 ## one-hot encoding
 # 方角
@@ -212,11 +177,129 @@ class x_y_direction_dummies(Feature):
         self.test = pd.get_dummies(test['x_y_direction'])
         create_memo('x_y_direction', 'x,y,directionを結合')
 
+## 時系列
+## shift(1階差分)
+class shift_1day(Feature):
+    def create_features(self):
+        cols = ['accum_minutes', 'direction', 'x', 'y']
+        target_col = 'congestion'
+        time_col = 'time'
+
+        train[time_col] = pd.to_datetime(train[time_col])
+        train['accum_minutes'] = (train[time_col] - train[time_col].dt.floor('D')).dt.total_seconds() / 60
+        n_train = len(train)
+
+        test[time_col] = pd.to_datetime(test[time_col])
+        test['accum_minutes'] = (test[time_col] - test[time_col].dt.floor('D')).dt.total_seconds() / 60
+
+        train_and_test = pd.concat([train, test])
+        grp_df = train_and_test.groupby(cols)[target_col]
+
+        outputs = []
+        for i in [1]:
+            shift_series = grp_df.shift(i)
+            outputs.append(pd.DataFrame(shift_series).add_prefix(f'shift{i}_'))
+
+        self.train = pd.concat(outputs, axis=1).iloc[:n_train, :]
+        self.test = pd.concat(outputs, axis=1).iloc[n_train:, :]
+        create_memo('shift_day', '1日shift')
+
+## 時系列
+## shift(1~3階差分)
+class shift_3days(Feature):
+    def create_features(self):
+        cols = ['accum_minutes', 'direction', 'x', 'y']
+        target_col = 'congestion'
+        time_col = 'time'
+
+        train[time_col] = pd.to_datetime(train[time_col])
+        train['accum_minutes'] = (train[time_col] - train[time_col].dt.floor('D')).dt.total_seconds() / 60
+        n_train = len(train)
+
+        test[time_col] = pd.to_datetime(test[time_col])
+        test['accum_minutes'] = (test[time_col] - test[time_col].dt.floor('D')).dt.total_seconds() / 60
+        n_test = len(test)
+
+        train_and_test = pd.concat([train, test])
+        grp_df = train_and_test.groupby(cols)[target_col]
+
+        outputs = []
+        for i in [1, 2, 3]:
+            shift_series = grp_df.shift(i)
+            outputs.append(pd.DataFrame(shift_series).add_prefix(f'shift{i}_'))
+
+        self.train = pd.concat(outputs, axis=1).iloc[:n_train, :]
+        self.test = pd.concat(outputs, axis=1).iloc[n_train:, :]
+        create_memo('shift_3days', '3日shift')
+
+## 時系列
+## 差分(1~3階差分)
+class diff_3days(Feature):
+    def create_features(self):
+        cols = ['accum_minutes', 'direction', 'x', 'y']
+        target_col = 'congestion'
+        time_col = 'time'
+
+        train[time_col] = pd.to_datetime(train[time_col])
+        train['accum_minutes'] = (train[time_col] - train[time_col].dt.floor('D')).dt.total_seconds() / 60
+        n_train = len(train)
+
+        test[time_col] = pd.to_datetime(test[time_col])
+        test['accum_minutes'] = (test[time_col] - test[time_col].dt.floor('D')).dt.total_seconds() / 60
+        n_test = len(test)
+
+        train_and_test = pd.concat([train, test])
+        grp_df = train_and_test.groupby(cols)[target_col]
+
+        outputs = []
+        for i in [1, 2, 3]:
+            shift_series = grp_df.diff(i)
+            outputs.append(pd.DataFrame(shift_series).add_prefix(f'shift{i}_'))
+
+        self.train = pd.concat(outputs, axis=1).iloc[:n_train, :]
+        self.test = pd.concat(outputs, axis=1).iloc[n_train:, :]
+        create_memo('shift_days', '3日差分')
+
+## 時系列
+## 移動平均
+class rolling_days(Feature):
+    def create_features(self):
+        cols = ['accum_minutes', 'direction', 'x', 'y']
+        agg_cols = ['min', 'max', 'mean', 'std']
+        target_col = 'congestion'
+        time_col = 'time'
+
+        train[time_col] = pd.to_datetime(train[time_col])
+        train['accum_minutes'] = (train[time_col] - train[time_col].dt.floor('D')).dt.total_seconds() / 60
+        n_train = len(train)
+
+        test[time_col] = pd.to_datetime(test[time_col])
+        test['accum_minutes'] = (test[time_col] - test[time_col].dt.floor('D')).dt.total_seconds() / 60
+        n_test = len(test)
+
+        train_and_test = pd.concat([train, test])
+        # 1階差分shiftさせる（過去データを含まないようにするため）
+        train_and_test[target_col] = train_and_test.groupby(cols)[target_col].shift(1)
+        
+        grp_df = train_and_test.groupby(cols)[target_col]
+
+        outputs = []
+        for i in [2, 3, 5]:
+            rolling_df = grp_df.rolling(i).agg(agg_cols)
+            rolling_df = pd.DataFrame(rolling_df).add_prefix(f'rolling{i}_mean_')
+            rolling_df.index = rolling_df.index.map(lambda x: x[4])
+            outputs.append(rolling_df.sort_index())
+        
+        self.train = pd.concat(outputs, axis=1).iloc[:n_train, :].reset_index(drop=True)
+        self.test = pd.concat(outputs, axis=1).iloc[n_train:, :].reset_index(drop=True)
+        create_memo('rolling', '移動平均')
+
 ## 統計量作成
 # 集約して差分をとる
 class agg_shift_by_date(Feature):
     def create_features(self):
         time_col = 'time'
+        target_col = 'congestion'
         train[time_col] = pd.to_datetime(train[time_col])        
         train['date'] = train[time_col].dt.date
         train['pm'] = 0
@@ -234,7 +317,7 @@ class agg_shift_by_date(Feature):
         self.train, self.test = train.copy(), test.copy()
 
         for cols in cols_set:
-            grp_df = train.groupby(cols)['congestion'].agg(agg_cols)
+            grp_df = train.groupby(cols)[target_col].agg(agg_cols)
             
             # 過去のデータの統計量を特徴量とする
             for i in [1, 2, 3]:
@@ -260,17 +343,17 @@ class target_encoded_feats(Feature):
         fold = KFold(n_splits=5, shuffle=False)
         initial_train_cols = train.columns
         initial_test_cols = test.columns
-        col = 'time'
+        time_col = 'time'
         categorical_cols = ['direction', 'hour', 'x', 'y']
         target_col = 'congestion'
-        train[col] = pd.to_datetime(train[col])
-        train['hour'] = train[col].dt.hour
+        train[time_col] = pd.to_datetime(train[time_col])
+        train['hour'] = train[time_col].dt.hour
         train['hour'] = train['hour'].map(str)
         train['x'] = train['x'].map(str)
         train['y'] = train['y'].map(str)
 
-        test[col] = pd.to_datetime(test[col])
-        test['hour'] = test[col].dt.hour
+        test[time_col] = pd.to_datetime(test[time_col])
+        test['hour'] = test[time_col].dt.hour
         test['hour'] = test['hour'].map(str)
         test['x'] = test['x'].map(str)
         test['y'] = test['y'].map(str)
@@ -287,12 +370,12 @@ class target_encoded_feats(Feature):
 
 
 # ## 特徴量集約
-# # 差分無し
-# class agg_shift_by_date(Feature):
+# # 時系列の場合はリークする
+# class agg_feats(Feature):
 #   def create_features(self):
 #       dropped_cols_train, dropped_cols_test = train.columns, test.columns
 #       agg_cols = ['min', 'max', 'mean', 'std']
-#       cols_set = [['date'], ['date', 'pm'], ['date', 'direction', 'x', 'y']]
+#       cols_set = [['accum_minutes', 'direction', 'x', 'y']]
 
 #       for cols in cols_set:
 #           grp_df = train.groupby(cols)['congestion'].agg(agg_cols)
@@ -304,7 +387,7 @@ class target_encoded_feats(Feature):
 #       # 不要なカラム削除
 #       self.train = train.drop(dropped_cols_train, axis=1)
 #       self.test = test.drop(dropped_cols_test, axis=1)
-    #   create_memo('agg_shift_by_date', f'{cols_set}で集約')
+#       create_memo('agg_feats', f'{cols_set}で集約')
 
 
 # # 学習モデルを特徴量データとして追加
