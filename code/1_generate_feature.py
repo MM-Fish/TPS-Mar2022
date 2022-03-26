@@ -31,7 +31,11 @@ with open(CONFIG_FILE) as file:
 RAW_DIR_NAME = yml['SETTING']['RAW_DIR_NAME']  # 特徴量生成元のRAWデータ格納場所
 MODEL_DIR_NAME = yml['SETTING']['MODEL_DIR_NAME']  # 特徴量生成元のRAWデータ格納場所
 Feature.dir = yml['SETTING']['FEATURE_DIR_NAME']  # 生成した特徴量の出力場所
-# Feature.dir = yml['SETTING']['FEATURE_DIR_NAME'] + 'imputation/'
+
+# 前処理後
+# RAW_DIR_NAME = yml['SETTING']['RAW_DIR_NAME_IMP']
+# Feature.dir = yml['SETTING']['FEATURE_DIR_NAME_IMP']
+
 feature_memo_path = Feature.dir + '_features_memo.csv'
 
 
@@ -53,10 +57,27 @@ class rawdata(Feature):
         create_memo('all_raw_data', '全初期データ')
 
 # 座標
+class row_id(Feature):
+    def create_features(self):
+        self.train['row_id'] = train['row_id']
+        self.test['row_id'] = test['row_id']
+        create_memo('id', 'ID')
+
+# 方角
+class direction(Feature):
+    def create_features(self):
+        self.train['direction'] = train['direction']
+        self.test['direction'] = test['direction']
+        create_memo('direction', '方角')
+
+# 座標
 class coordinate(Feature):
     def create_features(self):
         self.train['x'] = train['x']
         self.train['y'] = train['y']
+
+        self.test['x'] = test['x']
+        self.test['y'] = test['y']
         create_memo('coordinate', '座標')
 
 ## カテゴリカル変数の結合
@@ -102,6 +123,46 @@ class add_x_y(Feature):
         self.test = encoder.transform(test)
         create_memo('add_x_y', 'xとyの加算')
 
+## 方角
+class combine_decompose_direction(Feature):
+    def create_features(self):
+        dir_mapper = {'EB': [1,0], 
+                    'NB': [0,1], 
+                    'SB': [0,-1], 
+                    'WB': [-1,0], 
+                    'NE': [1,1], 
+                    'SW': [-1,-1], 
+                    'NW': [-1,1], 
+                    'SE': [1,-1]}
+        self.train['direction_x_axis'] = train['direction'].map(lambda x: dir_mapper[x][0])
+        self.train['direction_y_axis'] = train['direction'].map(lambda x: dir_mapper[x][1])
+        self.train['x+y+directionx'] = train['x'].astype('str') + train['y'].astype('str') + self.train['direction_x_axis'].astype('str')
+        self.train['x+y+directiony'] = train['x'].astype('str') + train['y'].astype('str') + self.train['direction_y_axis'].astype('str')
+
+        self.test['direction_x_axis'] = test['direction'].map(lambda x: dir_mapper[x][0])
+        self.test['direction_y_axis'] = test['direction'].map(lambda x: dir_mapper[x][1])
+        self.test['x+y+directionx'] = test['x'].astype('str') + test['y'].astype('str') + self.test['direction_x_axis'].astype('str')
+        self.test['x+y+directiony'] = test['x'].astype('str') + test['y'].astype('str') + self.test['direction_y_axis'].astype('str')
+        create_memo('decompose_direction', '方角をx軸とy軸に分解')
+
+## 方角
+class decompose_direction(Feature):
+    def create_features(self):
+        dir_mapper = {'EB': [1,0], 
+                    'NB': [0,1], 
+                    'SB': [0,-1], 
+                    'WB': [-1,0], 
+                    'NE': [1,1], 
+                    'SW': [-1,-1], 
+                    'NW': [-1,1], 
+                    'SE': [1,-1]}
+        self.train['direction_x_axis'] = train['direction'].map(lambda x: dir_mapper[x][0])
+        self.train['direction_y_axis'] = train['direction'].map(lambda x: dir_mapper[x][1])
+
+        self.test['direction_x_axis'] = test['direction'].map(lambda x: dir_mapper[x][0])
+        self.test['direction_y_axis'] = test['direction'].map(lambda x: dir_mapper[x][1])
+        create_memo('decompose_direction', '方角をx軸とy軸に分解')
+
 # 時間
 class datetime_element(Feature):
     def create_features(self):
@@ -123,7 +184,27 @@ class datetime_element(Feature):
         self.test['hour'] = test[time_col].dt.hour
         self.test['minute'] = test[time_col].dt.minute
         # self.test['second'] = test[time_col].dt.second
-        create_memo('time', '年、月、週、日、時間、分、秒')
+        create_memo('datetime_element', '年、月、週、日、時間、分、秒')
+
+# 週末
+class is_weekend(Feature):
+    def create_features(self):
+        time_col = 'time'
+        train[time_col] = pd.to_datetime(train[time_col])
+        self.train['is_weekend'] = (train[time_col].dt.dayofweek > 4).astype('int')
+
+        test[time_col] = pd.to_datetime(test[time_col])
+        self.test['is_weekend'] = (test[time_col].dt.dayofweek > 4).astype('int')
+        create_memo('is_weekend', '週末')
+
+# 日付のみ取得
+# kflodに使う特徴量（クラス名とカラム名を揃える）
+class date_obj(Feature):
+    def create_features(self):
+        time_col = 'time'
+        self.train['date_obj'] = pd.to_datetime(train[time_col]).dt.date
+        self.test['date_obj'] = pd.to_datetime(test[time_col]).dt.date
+        create_memo('data_obj', '日付')
 
 # 1日の積算の分
 class accum_minutes(Feature):
@@ -254,7 +335,7 @@ class diff_3days(Feature):
         outputs = []
         for i in [1, 2, 3]:
             shift_series = grp_df.diff(i)
-            outputs.append(pd.DataFrame(shift_series).add_prefix(f'shift{i}_'))
+            outputs.append(pd.DataFrame(shift_series).add_prefix(f'diff{i}_'))
 
         self.train = pd.concat(outputs, axis=1).iloc[:n_train, :]
         self.test = pd.concat(outputs, axis=1).iloc[n_train:, :]
@@ -286,13 +367,81 @@ class rolling_days(Feature):
         outputs = []
         for i in [2, 3, 5]:
             rolling_df = grp_df.rolling(i).agg(agg_cols)
-            rolling_df = pd.DataFrame(rolling_df).add_prefix(f'rolling{i}_mean_')
+            rolling_df = pd.DataFrame(rolling_df).add_prefix(f'rolling{i}_')
             rolling_df.index = rolling_df.index.map(lambda x: x[4])
             outputs.append(rolling_df.sort_index())
         
         self.train = pd.concat(outputs, axis=1).iloc[:n_train, :].reset_index(drop=True)
         self.test = pd.concat(outputs, axis=1).iloc[n_train:, :].reset_index(drop=True)
         create_memo('rolling', '移動平均')
+
+## 時系列
+## 移動平均(10日)
+class rolling_10days(Feature):
+    def create_features(self):
+        cols = ['accum_minutes', 'direction', 'x', 'y']
+        agg_cols = ['min', 'max', 'mean', 'std']
+        target_col = 'congestion'
+        time_col = 'time'
+
+        train[time_col] = pd.to_datetime(train[time_col])
+        train['accum_minutes'] = (train[time_col] - train[time_col].dt.floor('D')).dt.total_seconds() / 60
+        n_train = len(train)
+
+        test[time_col] = pd.to_datetime(test[time_col])
+        test['accum_minutes'] = (test[time_col] - test[time_col].dt.floor('D')).dt.total_seconds() / 60
+        n_test = len(test)
+
+        train_and_test = pd.concat([train, test])
+        # 1階差分shiftさせる（過去データを含まないようにするため）
+        train_and_test[target_col] = train_and_test.groupby(cols)[target_col].shift(1)
+        
+        grp_df = train_and_test.groupby(cols)[target_col]
+
+        outputs = []
+        for i in [10]:
+            rolling_df = grp_df.rolling(i).agg(agg_cols)
+            rolling_df = pd.DataFrame(rolling_df).add_prefix(f'rolling{i}_')
+            rolling_df.index = rolling_df.index.map(lambda x: x[4])
+            outputs.append(rolling_df.sort_index())
+        
+        self.train = pd.concat(outputs, axis=1).iloc[:n_train, :].reset_index(drop=True)
+        self.test = pd.concat(outputs, axis=1).iloc[n_train:, :].reset_index(drop=True)
+        create_memo('rolling_10days', '移動平均')
+
+## 移動平均(10日)
+class rolling_30days(Feature):
+    def create_features(self):
+        cols = ['accum_minutes', 'direction', 'x', 'y']
+        agg_cols = ['min', 'max', 'mean', 'std']
+        target_col = 'congestion'
+        time_col = 'time'
+
+        train[time_col] = pd.to_datetime(train[time_col])
+        train['accum_minutes'] = (train[time_col] - train[time_col].dt.floor('D')).dt.total_seconds() / 60
+        n_train = len(train)
+
+        test[time_col] = pd.to_datetime(test[time_col])
+        test['accum_minutes'] = (test[time_col] - test[time_col].dt.floor('D')).dt.total_seconds() / 60
+        n_test = len(test)
+
+        train_and_test = pd.concat([train, test])
+        # 1階差分shiftさせる（過去データを含まないようにするため）
+        train_and_test[target_col] = train_and_test.groupby(cols)[target_col].shift(1)
+        
+        grp_df = train_and_test.groupby(cols)[target_col]
+
+        outputs = []
+        for i in [30]:
+            rolling_df = grp_df.rolling(i).agg(agg_cols)
+            rolling_df = pd.DataFrame(rolling_df).add_prefix(f'rolling{i}_')
+            rolling_df.index = rolling_df.index.map(lambda x: x[4])
+            outputs.append(rolling_df.sort_index())
+        
+        self.train = pd.concat(outputs, axis=1).iloc[:n_train, :].reset_index(drop=True)
+        self.test = pd.concat(outputs, axis=1).iloc[n_train:, :].reset_index(drop=True)
+        create_memo('rolling_30days', '移動平均')
+
 
 ## 統計量作成
 # 集約して差分をとる
@@ -401,13 +550,12 @@ class target_encoded_feats(Feature):
 # 特徴量メモcsvファイル作成
 def create_memo(col_name, desc):
 
-    file_path = Feature.dir + '/_features_memo.csv'
-    if not os.path.isfile(file_path):
-        with open(file_path,"w") as f:
+    if not os.path.isfile(feature_memo_path):
+        with open(feature_memo_path,"w") as f:
             writer = csv.writer(f)
             writer.writerow([col_name, desc])
 
-    with open(file_path, 'r+') as f:
+    with open(feature_memo_path, 'r+') as f:
         lines = f.readlines()
         lines = [line.strip() for line in lines]
 

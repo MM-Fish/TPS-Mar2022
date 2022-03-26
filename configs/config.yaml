@@ -4,3 +4,5 @@ SETTING:
   SUB_DIR_NAME: '../data/submission/' # sample提出ファイル保存ディレクトリ
   RAW_DIR_NAME: '../data/raw/' # オリジナルデータの格納先ディレクトリ
   FEATURE_DIR_NAME: '../data/features/' # 特徴量の格納先ディレクトリ
+  RAW_DIR_NAME_IMP: '../data/raw/imputation/' # 前処理後のオリジナルデータの格納先ディレクトリ
+  FEATURE_DIR_NAME_IMP: '../data/features/imputation/' # 前処理後の特徴量の格納先ディレクトリ

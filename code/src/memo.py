@@ -3,14 +3,10 @@ import numpy as np
 from datetime import timedelta
 
 # 時系列データにおける欠損行の補完
-time_col = 'time'
-freq = '20min'
-
-df = train.copy()
-def df_imputatino(df):
+def impute_time_series(df, time_col, freq):
   df['merged_feat'] = df['x'].map(lambda x: str(x) + '_') + df['y'].map(lambda x: str(x) + '_') + df['direction']
 
-  df = pd.to_datetime(df[time_col])
+  df[time_col] = pd.to_datetime(df[time_col])
 
   unique_time = pd.DataFrame(df[time_col].unique())
   max_time = unique_time.max()[0]
@@ -32,4 +28,11 @@ def df_imputatino(df):
 
   df_imputation = pd.merge(df, absolute_series, how='outer')
   print(df_imputation.shape)
-  return df_imputation
+  return df_imputation.sort_values(['time', 'x', 'y', 'direction', 'congestion'])
+
+
+time_col = 'time'
+freq = '20min'
+df = train.copy()
+impute_time_series(df, time_col, freq)
+

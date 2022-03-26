@@ -66,7 +66,7 @@ class PlotSeries4axis(FigurePlot):
         for i, col_v in tqdm(enumerate(col_categorical_uniques)):
             data = self.train.loc[self.train[self.col]==col_v, :]
             axes[i].set_title(f'{self.col}: {col_v}')
-            sns.lineplot(data=data, x=self.x, y=self.y, hue=self.z, ax=axes[i], estimator=self.estimator, ci=ci)
+            sns.lineplot(data=data, x=self.x, y=self.y, hue=self.z, ax=axes[i], estimator=self.estimator, ci=self.ci)
             axes[i].legend(loc='upper left')
             if self.is_xlim is True:
                 axes[i].set_xlim(self.train[self.x].min(), self.train[self.x].max())

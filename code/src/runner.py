@@ -11,8 +11,9 @@ import random
 from models.learning.model import Model
 from tqdm import tqdm, tqdm_notebook
 from sklearn.metrics import log_loss, mean_squared_error, mean_squared_log_error, mean_absolute_error, accuracy_score
-from sklearn.model_selection import KFold, StratifiedKFold, GroupKFold, train_test_split
+from sklearn.model_selection import KFold, StratifiedKFold, GroupKFold
 from typing import Callable, List, Optional, Tuple, Union
+from kfold import MovingWindowKFold
 from util import Logger, Util
 
 # 定数
@@ -43,6 +44,7 @@ class Runner:
         self.model_cls = model_cls
         self.features = features
         self.target = setting.get('target')
+        self.id_column = setting.get('id_column')
         self.calc_shap = setting.get('calc_shap')
         self.save_train_pred = setting.get('save_train_pred')
         self.params = params
@@ -51,6 +53,9 @@ class Runner:
         self.random_state = cv.get('random_state')
         self.shuffle = cv.get('shuffle')
         self.cv_target_column = cv.get('cv_target')
+        self.clipping = cv.get('clipping')
+        self.time_series_column = cv.get('time_series_column')
+        self.min_id = cv.get('min_id')
         self.debug = setting.get('debug')
         self.feature_dir_name = feature_dir_name
         self.model_dir_name = out_dir_name
@@ -138,6 +143,12 @@ class Runner:
                 tr_idx, va_idx = self.load_index_sk_fold(i_fold)
             elif self.cv_method == 'GroupKFold':
                 tr_idx, va_idx = self.load_index_gk_fold(i_fold)
+            elif self.cv_method == 'TimeSeriesSplit':
+                tr_idx, va_idx = self.load_index_ts_fold(i_fold)
+                self.logger.info(f'{min(tr_idx), max(tr_idx), len(tr_idx)} - training index')
+                self.logger.info(f'{min(va_idx), max(va_idx), len(va_idx)} - valid index')
+            elif self.cv_method == 'HoldOut':
+                tr_idx, va_idx = self.hold_out()
             else:
                 print('CVメソッドが正しくないため終了します')
                 sys.exit(0)
@@ -212,15 +223,17 @@ class Runner:
 
         # 各foldの結果をまとめる
         va_idxes = np.concatenate(va_idxes)
-        order = np.argsort(va_idxes)
-        preds = np.concatenate(preds, axis=0)
-        preds = preds[order]
+        row_ids = self.row_ids[self.id_column]
+        row_ids = row_ids[list(va_idxes)].reset_index(drop=True)
+        preds = pd.Series(np.concatenate(preds, axis=0))
+        preds = pd.concat([row_ids, preds], axis=1)
+        preds.columns = ['row_id', 'pred']
 
         self.logger.info(f'{self.run_name} - end training cv - score {np.mean(scores)}')
 
         # 学習データでの予測結果の保存
         if self.save_train_pred:
-            Util.dump_df_pickle(pd.DataFrame(preds), self.out_dir_name + f'.{self.run_name}-train.pkl')
+            Util.dump_df_pickle(preds, self.out_dir_name + f'.{self.run_name}-train.pkl')
 
         # 評価結果の保存
         self.logger.result_scores(self.run_name, scores)
@@ -348,7 +361,7 @@ class Runner:
         if self.model_cls.__name__=='ModelLSTM':
             # 欠損している日ごと除去
             train_x['date'] = train_x['month'].map(str) + '_' + train_x['day'].map(str)
-            drop_index = (train_x['diff_1days'].isna()) | (train_y.isna())
+            drop_index = (train_x.isnull().any(axis=1)) | (train_y.isna())
             drop_dates = train_x.loc[drop_index, 'date'].unique()
             train_x = train_x.query('date not in @drop_dates').drop(['date'], axis=1)
             
@@ -356,16 +369,19 @@ class Runner:
             train_x = train_x.query('pm==1')
             train_y = train_y[train_x.index]
 
-            train_x = train_x.sort_values(['month', 'day', 'x_y_direction', 'pm', 'accum_minutes']).drop(['x_y_direction'], axis=1)
-            size_name = len(train_x['accum_minutes'].unique())
+            train_x = train_x.sort_values(['month', 'day', 'xydirection_re', 'pm', 'accum_minutes_half_day']).drop(['xydirection_re'], axis=1)
+            size_name = len(train_x['accum_minutes_half_day'].unique())
             train_x = np.array(train_x).reshape(-1, size_name, train_x.shape[-1])
             train_y = train_y.to_numpy().reshape(-1, size_name)
         else:
             # 欠損値除去
-            keep_index = ~train_x.isna().any(axis=1) & ~train_y.isna()
-            train_x, train_y = train_x.loc[keep_index, :], train_y[keep_index]
+            self.keep_index = ~train_x.isna().any(axis=1) & ~train_y.isna()
+            train_x, train_y = train_x.loc[self.keep_index, :], train_y[self.keep_index]
             train_x, train_y = np.array(train_x), np.array(train_y)
-
+            
+            # 列ID取得
+            self.row_ids = self.load_row_ids()
+            self.row_ids = self.row_ids.reset_index(drop=True)            
 
         if self.debug is True:
             """サンプル数を50程度にする
@@ -377,6 +393,14 @@ class Runner:
             # 欠損値を除去する場合
             return train_x, train_y
         
+    def load_row_ids(self) -> pd.Series:
+        """IDを読み込む（予測結果などと照らし合わせるときに使用）
+        :return:  ID
+        """
+        row_ids = pd.read_pickle(self.feature_dir_name + self.id_column + '_train.pkl').loc[self.keep_index, :]
+        return row_ids
+
+
     def load_x_test(self) -> pd.DataFrame:
         """テストデータの特徴量を読み込む
         :return: テストデータの特徴量
@@ -386,8 +410,8 @@ class Runner:
 
         ############ (要修正)モデルに持たせたい
         if self.model_cls.__name__=='ModelLSTM':
-            test_x = test_x.sort_values(['month', 'day', 'x_y_direction', 'pm', 'accum_minutes']).drop(['x_y_direction'], axis=1)
-            size_name = len(test_x['accum_minutes'].unique())
+            test_x = test_x.sort_values(['month', 'day', 'xydirection_re', 'pm', 'accum_minutes_half_day']).drop(['xydirection_re'], axis=1)
+            size_name = len(test_x['accum_minutes_half_day'].unique())
             test_x = np.array(test_x).reshape(-1, size_name, test_x.shape[-1])
         else:
             test_x = np.array(test_x)
@@ -408,8 +432,15 @@ class Runner:
         :return: 分布の比率を維持したいデータの特徴量
         """
         df = pd.read_pickle(self.feature_dir_name + self.cv_target_column + '_train.pkl')
-        return pd.Series(df[self.cv_target_column])
+        return df[self.cv_target_column]
 
+    def load_time_series(self) -> pd.Series:
+        """
+        TimeSeriesSplitの基準となる時系列カラムを取得する
+        :return: 時系列の特徴量
+        """
+        df = pd.read_pickle(self.feature_dir_name + self.time_series_column + '_train.pkl').loc[self.keep_index, :].reset_index(drop=True)
+        return df[self.time_series_column]
 
     def load_index_k_fold(self, i_fold: int) -> np.array:
         """クロスバリデーションでのfoldを指定して対応するレコードのインデックスを返す
@@ -417,10 +448,9 @@ class Runner:
         :return: foldに対応するレコードのインデックス
         """
         # 学習データ・バリデーションデータを分けるインデックスを返す
-        dummy_x = np.zeros(len(self.train_y))
+        dummy_x = np.zeros(len(self.train_x))
         kf = KFold(n_splits=self.n_splits, shuffle=self.shuffle, random_state=self.random_state)
         return list(kf.split(dummy_x))[i_fold]
-
 
     def load_index_sk_fold(self, i_fold: int) -> np.array:
         """クロスバリデーションでのfoldを指定して対応するレコードのインデックスを返す
@@ -433,14 +463,33 @@ class Runner:
         kf = StratifiedKFold(n_splits=self.n_splits, shuffle=self.shuffle, random_state=self.random_state)
         return list(kf.split(dummy_x, stratify_data))[i_fold]
 
-
     def load_index_gk_fold(self, i_fold: int) -> np.array:
         """クロスバリデーションでのfoldを指定して対応するレコードのインデックスを返す
         :param i_fold: foldの番号
         :return: foldに対応するレコードのインデックス
         """
         # 学習データ・バリデーションデータを分けるインデックスを返す
-        group_data = self.load_stratify_or_group_target()
-        dummy_x = np.zeros(len(group_data))
+        group_series = self.load_stratify_or_group_target()
+        dummy_x = np.zeros(len(group_series))
         kf = GroupKFold(n_splits=self.n_splits)
-        return list(kf.split(dummy_x, self.train_y, groups=group_data))[i_fold]
+        return list(kf.split(dummy_x, self.train_y, groups=group_series))[i_fold]
+
+    def load_index_ts_fold(self, i_fold: int) -> np.array:
+        """クロスバリデーションでのfoldを指定して対応するレコードのインデックスを返す
+        :param i_fold: foldの番号
+        :return: foldに対応するレコードのインデックス
+        """
+        # 学習データ・バリデーションデータを分けるインデックスを返す
+        ts_series = self.load_time_series()
+        kf = MovingWindowKFold(time_series_column=self.time_series_column, clipping=self.clipping, n_splits=self.n_splits)
+        return list(kf.split(pd.DataFrame(ts_series)))[i_fold]
+
+    def hold_out(self) -> np.array:
+        """クロスバリデーションでのfoldを指定して対応するレコードのインデックスを返す
+        :param i_fold: foldの番号
+        :return: foldに対応するレコードのインデックス
+        """
+        # 学習データ・バリデーションデータを分けるインデックスを返す
+        tr_idx = self.row_ids.loc[self.row_ids[self.id_column] < self.min_id, :].index
+        va_idx = self.row_ids.loc[self.row_ids[self.id_column] >= self.min_id, :].index
+        return tr_idx, va_idx

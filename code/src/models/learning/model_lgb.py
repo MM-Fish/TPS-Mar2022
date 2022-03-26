@@ -79,22 +79,23 @@ class ModelLGB(Model):
         val_split = pd.Series(val_split)
         val_gain = pd.Series(val_gain)
 
-        for m in model_array[1:]:
-            s = pd.Series(m.feature_importance(importance_type='split'))
-            val_split = pd.concat([val_split, s], axis=1)
-            s = pd.Series(m.feature_importance(importance_type='gain'))
-            val_gain = pd.concat([val_gain, s], axis=1)
-
         # -----------
         # splitの計算
         # -----------
-        # 各foldの平均を算出
-        val_mean = val_split.mean(axis=1)
+        if len(model_array) > 1:
+            for m in model_array[1:]:
+                s = pd.Series(m.feature_importance(importance_type='split'))
+                val_split = pd.concat([val_split, s], axis=1)
+                s = pd.Series(m.feature_importance(importance_type='gain'))
+                val_gain = pd.concat([val_gain, s], axis=1)
+            # 各foldの平均と標準偏差を算出
+            val_mean = val_split.mean(axis=1)
+            val_std = val_split.std(axis=1)
+        else:
+            val_mean = val_split
+            val_std = val_split
         val_mean = val_mean.values
         importance_df_mean = pd.DataFrame(val_mean, index=features, columns=['importance']).sort_values('importance')
-
-        # 各foldの標準偏差を算出
-        val_std = val_split.std(axis=1)
         val_std = val_std.values
         importance_df_std = pd.DataFrame(val_std, index=features, columns=['importance']).sort_values('importance')
 
@@ -132,17 +133,24 @@ class ModelLGB(Model):
         plt.savefig(dir_name + run_name + '_fi_split.png', dpi=300, bbox_inches="tight")
         plt.close()
 
-
         # -----------
         # gainの計算
         # -----------
-        # 各foldの平均を算出
-        val_mean = val_gain.mean(axis=1)
+        if len(model_array) > 1:
+            for m in model_array[1:]:
+                s = pd.Series(m.feature_importance(importance_type='split'))
+                val_split = pd.concat([val_split, s], axis=1)
+                s = pd.Series(m.feature_importance(importance_type='gain'))
+                val_gain = pd.concat([val_gain, s], axis=1)
+            # 各foldの平均と標準偏差を算出
+            val_mean = val_gain.mean(axis=1)
+            val_std = val_gain.std(axis=1)
+        else:
+            val_mean = val_split
+            val_std = val_split
+
         val_mean = val_mean.values
         importance_df_mean = pd.DataFrame(val_mean, index=features, columns=['importance']).sort_values('importance')
-
-        # 各foldの標準偏差を算出
-        val_std = val_gain.std(axis=1)
         val_std = val_std.values
         importance_df_std = pd.DataFrame(val_std, index=features, columns=['importance']).sort_values('importance')
 

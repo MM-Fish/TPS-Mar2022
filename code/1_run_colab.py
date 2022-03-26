@@ -122,9 +122,10 @@ if __name__ == '__main__':
         "shift_3days",
         "datetime_element",
         "accum_minutes",
-        "x_y_direction_dummies",
+        'coordinate',
+        'decompose_direction',
         "agg_shift_by_date",
-        "rolling_days",
+        "rolling_30days",
         "diff_3days"
         ]
     target = 'congestion'
@@ -132,9 +133,16 @@ if __name__ == '__main__':
     # CVの設定.methodは[KFold, StratifiedKFold ,GroupKFold]から選択可能
     # CVしない場合（全データで学習させる場合）はmethodに'None'を設定
     # StratifiedKFold or GroupKFoldの場合は、cv_targetに対象カラム名を設定する
+    # TimeSeriesSplitの場合は、time_seires_column, clippingを設定する
     cv = {
-        'method': 'KFold',
-        'n_splits': 5,
+        # 'method': 'KFold',
+        # 'method': 'TimeSeriesSplit',
+        # 'clipping': False,
+        # 'time_series_column': 'date_obj',
+        # 'n_splits': 3,
+        'method': 'HoldOut',
+        'min_id': 846495,
+        'n_splits': 1,
         'random_state': 42,
         'shuffle': True,
         'cv_target': target
@@ -158,6 +166,7 @@ if __name__ == '__main__':
         'run_name': run_name,  # run名 <- settingに不要？
         'feature_directory': FEATURE_DIR_NAME,  # 特徴量の読み込み先ディレクトリ
         'target': target,  # 目的変数
+        'id_column': 'row_id', # 行番号
         'calc_shap': False,  # shap値を計算するか否か
         'save_train_pred': True,  # trainデータでの推論値を保存するか否か
         'task_type': 'regression',

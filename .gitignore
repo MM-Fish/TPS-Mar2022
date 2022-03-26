@@ -7,7 +7,7 @@ gcs-key.json
 git_token
 
 /data/external
-/data/raw/*.csv
+/data/raw/
 /data/submission/*.csv
 /data/features/*
 /models
