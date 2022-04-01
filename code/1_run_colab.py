@@ -28,6 +28,14 @@ with open(CONFIG_FILE) as file:
 MODEL_DIR_NAME = yml['SETTING']['MODEL_DIR_NAME']
 FEATURE_DIR_NAME = yml['SETTING']['FEATURE_DIR_NAME']
 
+# 前処理後
+RAW_DIR_NAME = yml['SETTING']['RAW_DIR_NAME_IMP']
+FEATURE_DIR_NAME = yml['SETTING']['FEATURE_DIR_NAME_IMP']
+
+# ディレクトリ確認
+print(RAW_DIR_NAME)
+print(FEATURE_DIR_NAME)
+
 warnings.filterwarnings("ignore")
 warnings.simplefilter('ignore')
 key_list = ['load_features', 'use_features', 'model_params', 'cv', 'dataset']
@@ -121,12 +129,14 @@ if __name__ == '__main__':
     features = [
         "shift_3days",
         "datetime_element",
-        "accum_minutes",
-        'coordinate',
-        'decompose_direction',
+        'direction_dummies',
+        # "coordinate",
+        # "decompose_direction",
+        'accum_minutes_half_day',
+        'agg_by_am',
         "agg_shift_by_date",
-        "rolling_30days",
-        "diff_3days"
+        "diff_3days",
+        'is_weekend'
         ]
     target = 'congestion'
 
@@ -135,14 +145,14 @@ if __name__ == '__main__':
     # StratifiedKFold or GroupKFoldの場合は、cv_targetに対象カラム名を設定する
     # TimeSeriesSplitの場合は、time_seires_column, clippingを設定する
     cv = {
-        # 'method': 'KFold',
+        'method': 'KFold',
         # 'method': 'TimeSeriesSplit',
         # 'clipping': False,
         # 'time_series_column': 'date_obj',
-        # 'n_splits': 3,
-        'method': 'HoldOut',
-        'min_id': 846495,
-        'n_splits': 1,
+        'n_splits': 4,
+        # 'method': 'HoldOut',
+        # 'min_id': 844155,
+        # 'n_splits': 1,
         'random_state': 42,
         'shuffle': True,
         'cv_target': target
@@ -181,7 +191,8 @@ if __name__ == '__main__':
         'num_round': 5000,
         'early_stopping_rounds': 1000,
         'verbose': 1000,
-        'random_state': 999
+        'random_state': 999,
+        'optuna': False
     }
     if DEBUG is True:
         model_params['num_round'] = 1000
@@ -200,7 +211,9 @@ if __name__ == '__main__':
         runner.run_predict_all()  # 推論
     else:
         runner.run_train_cv()  # 学習
+        ModelLGB.calc_loss_curve(out_dir_name, run_name)  # loss_curveを出力
         ModelLGB.calc_feature_importance(out_dir_name, run_name, use_feature_name)  # feature_importanceを計算
+        # ModelLGB.save_optuna_best_params(out_dir_name, run_name, use_feature_name)  # optunaのbest paramsを保存
         runner.run_predict_cv()  # 推論
 
     Submission.create_submission(run_name, out_dir_name, setting.get('target'), setting.get('task_type'))  # submit作成
@@ -263,127 +276,6 @@ if __name__ == '__main__':
     #     runner.run_predict_cv()  # 推論
 
     # Submission.create_submission(run_name, out_dir_name, setting.get('target'), setting.get('task_type'))  # submit作成
-
-
-    # # ######################################################
-    # # 学習・推論 keras ###################################
-
-    # # run nameの設定
-    # run_name = 'keras'
-    # run_name = run_name + suffix
-    # out_dir_name = MODEL_DIR_NAME + run_name + '/'
-
-    # # exist_check(MODEL_DIR_NAME, run_name)  # 実行可否確認
-    # my_makedirs(out_dir_name)  # runディレクトリの作成。ここにlogなどが吐かれる
-
-    # # 諸々の設定
-    # setting = {
-    #     'run_name': run_name,  # run名
-    #     'feature_directory': FEATURE_DIR_NAME,  # 特徴量の読み込み先ディレクトリ
-    #     'target': target,  # 目的変数
-    #     'calc_shap': False,  # shap値を計算するか否か
-    #     'save_train_pred': True,  # trainデータでの推論値を保存するか否か
-    #     'task_type': 'multiclass',
-    #     'debug': DEBUG
-    # }
-
-    # model_params = {
-    #     'task_type': 'multiclass',
-    #     'epochs': 50,
-    #     'batch_size': 999,
-    #     'learning_rate': 0.1,
-    #     'momentum': 0.8,
-    #     'optimizer': 'SGD'
-    # }
-    # if DEBUG is True:
-    #     model_params['epochs'] = 3
-
-    # runner = Runner(ModelKERAS, features, setting, model_params, cv, FEATURE_DIR_NAME, out_dir_name)
-
-    # use_feature_name = runner.get_feature_name() # 今回の学習で使用する特徴量名を取得
-
-    # # モデルのconfigをjsonで保存
-    # value_list = [features, use_feature_name, model_params, cv, setting]
-    # save_model_config(key_list, value_list, out_dir_name, run_name)
-
-    # # runner.visualize_corr() # 相関係数を可視化して保存
-    # if cv.get('method') == 'None':
-    #     runner.run_train_all()  # 全データで学習
-    #     runner.run_predict_all()  # 推論
-    # else:
-    #     runner.run_train_cv()  # 学習
-    #     runner.model_cls.calc_loss_curve(out_dir_name, run_name)  # feature_importanceを計算
-    #     runner.run_predict_cv()  # 推論
-
-    # Submission.create_submission(run_name, out_dir_name, setting.get('target'), setting.get('task_type'))  # submit作成
-
-    # # upload to GCS
-    # if DEBUG == True:
-    #     directry_path = f'../models/{run_name}/'
-    #     upload_gcs_from_directory(bucket, directry_path, BLOB_NAME)
-    
-    # ######################################################
-
-
-
-
-    # # ######################################################
-    # # 学習・推論 LSTM ###################################
-
-    # # run nameの設定
-    # run_name = 'lstm'
-    # run_name = run_name + suffix
-    # out_dir_name = MODEL_DIR_NAME + run_name + '/'
-
-    # # exist_check(MODEL_DIR_NAME, run_name)  # 実行可否確認
-    # my_makedirs(out_dir_name)  # runディレクトリの作成。ここにlogなどが吐かれる
-
-    # # 諸々の設定
-    # setting = {
-    #     'run_name': run_name,  # run名
-    #     'feature_directory': FEATURE_DIR_NAME,  # 特徴量の読み込み先ディレクトリ
-    #     'target': target,  # 目的変数
-    #     'calc_shap': False,  # shap値を計算するか否か
-    #     'save_train_pred': True,  # trainデータでの推論値を保存するか否か
-    #     'task_type': 'regression',
-    #     'debug': DEBUG
-    # }
-
-    # model_params = {
-    #     'task_type': 'regression',
-    #     'epochs': 100,
-    #     'batch_size': 999,
-    #     'learning_rate': 0.1,
-    #     'momentum': 0.8,
-    #     'optimizer': 'SGD'
-    # }
-
-    # if DEBUG is True:
-    #     model_params['epochs'] = 3
-    
-    # runner = Runner(ModelLSTM, features, setting, model_params, cv, FEATURE_DIR_NAME, out_dir_name)
-
-    # # モデルのconfigをjsonで保存
-    # value_list = [features, runner.use_feature_name, model_params, cv, setting]
-    # save_model_config(key_list, value_list, out_dir_name, run_name)
-
-    # # runner.visualize_corr() # 相関係数を可視化して保存
-    # if cv.get('method') == 'None':
-    #     runner.run_train_all()  # 全データで学習
-    #     runner.run_predict_all()  # 推論
-    # else:
-    #     runner.run_train_cv()  # 学習
-    #     runner.model_cls.calc_loss_curve(out_dir_name, run_name)  # loss_curveを出力
-    #     runner.run_predict_cv()  # 推論
-
-    # Submission.create_submission(run_name, out_dir_name, setting.get('target'), setting.get('task_type'))  # submit作成
-
-    # # upload to GCS
-    # if DEBUG == True:
-    #     directry_path = f'../models/{run_name}/'
-    #     upload_gcs_from_directory(bucket, directry_path, BLOB_NAME)
-
-
 
     # ######################################################
     # 学習・推論 Linear Discriminant Analysis ###################################

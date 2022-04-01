@@ -156,6 +156,8 @@ class Runner:
             ##################### numpyにしているため
             tr_x, tr_y = train_x[tr_idx], train_y[tr_idx]
             va_x, va_y = train_x[va_idx], train_y[va_idx]
+            self.logger.info(f'{self.run_name} - i_fold: {i_fold} - tr_x, tr_y shape: {tr_x.shape, tr_y.shape}')
+            self.logger.info(f'{self.run_name} - i_fold: {i_fold} - va_x, va_y shape: {va_x.shape, va_y.shape}')
 
             # 学習を行う
             model = self.build_model(i_fold)
@@ -360,28 +362,28 @@ class Runner:
         ############ (要修正)モデルに持たせたい
         if self.model_cls.__name__=='ModelLSTM':
             # 欠損している日ごと除去
-            train_x['date'] = train_x['month'].map(str) + '_' + train_x['day'].map(str)
+            train_x['date'] = train_x['month'].astype(str) + '_' + train_x['day'].astype(str)
             drop_index = (train_x.isnull().any(axis=1)) | (train_y.isna())
             drop_dates = train_x.loc[drop_index, 'date'].unique()
-            train_x = train_x.query('date not in @drop_dates').drop(['date'], axis=1)
+            self.keep_index = ~train_x['date'].isin(drop_dates) & train_x['pm'] == 1
+            train_x, train_y = train_x.loc[self.keep_index, :], train_y[self.keep_index]
             
-            # 午後のみデータ使用
-            train_x = train_x.query('pm==1')
-            train_y = train_y[train_x.index]
-
-            train_x = train_x.sort_values(['month', 'day', 'xydirection_re', 'pm', 'accum_minutes_half_day']).drop(['xydirection_re'], axis=1)
+            train_x = train_x.sort_values(['month', 'day', 'xydirection_re', 'pm', 'accum_minutes_half_day']).drop(['xydirection_re', 'date'], axis=1)
+            print(train_x.columns)
             size_name = len(train_x['accum_minutes_half_day'].unique())
             train_x = np.array(train_x).reshape(-1, size_name, train_x.shape[-1])
             train_y = train_y.to_numpy().reshape(-1, size_name)
         else:
             # 欠損値除去
-            self.keep_index = ~train_x.isna().any(axis=1) & ~train_y.isna()
+            # self.keep_index = ~train_x.isna().any(axis=1) & ~train_y.isna()
+            # 午後のみを使用
+            self.keep_index = ~train_x.isna().any(axis=1) & ~train_y.isna() & train_x['pm'] == 1
             train_x, train_y = train_x.loc[self.keep_index, :], train_y[self.keep_index]
             train_x, train_y = np.array(train_x), np.array(train_y)
             
-            # 列ID取得
-            self.row_ids = self.load_row_ids()
-            self.row_ids = self.row_ids.reset_index(drop=True)            
+        # 列ID取得
+        self.row_ids = self.load_row_ids()
+        self.row_ids = self.row_ids.reset_index(drop=True)
 
         if self.debug is True:
             """サンプル数を50程度にする
@@ -489,7 +491,14 @@ class Runner:
         :param i_fold: foldの番号
         :return: foldに対応するレコードのインデックス
         """
-        # 学習データ・バリデーションデータを分けるインデックスを返す
-        tr_idx = self.row_ids.loc[self.row_ids[self.id_column] < self.min_id, :].index
-        va_idx = self.row_ids.loc[self.row_ids[self.id_column] >= self.min_id, :].index
+        ############ (要修正)モデルに持たせたい
+        if self.model_cls.__name__=='ModelLSTM':
+            n_train_x = int(len(self.train_x))
+            va_bgn = n_train_x - 65
+            tr_idx = np.arange(0, va_bgn)
+            va_idx = np.arange(va_bgn, n_train_x)
+        else:
+            # 学習データ・バリデーションデータを分けるインデックスを返す
+            tr_idx = self.row_ids.loc[self.row_ids[self.id_column] < self.min_id, :].index
+            va_idx = self.row_ids.loc[self.row_ids[self.id_column] >= self.min_id, :].index
         return tr_idx, va_idx

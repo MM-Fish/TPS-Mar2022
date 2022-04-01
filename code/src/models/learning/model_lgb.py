@@ -1,3 +1,4 @@
+from asyncio.log import logger
 from ctypes import util
 import os
 import numpy as np
@@ -6,11 +7,15 @@ import matplotlib.pyplot as plt
 import japanize_matplotlib
 import shap
 import lightgbm as lgb
+import optuna.integration.lightgbm as opt_lgb
 from model import Model
 from util import Util
+import json
 
 # 各foldのモデルを保存する配列
 model_array = []
+eval_results_array = []
+best_params_array = []
 
 class ModelLGB(Model):
 
@@ -27,19 +32,35 @@ class ModelLGB(Model):
         params = dict(self.params)
         num_round = params.pop('num_round')
         verbose = params.pop('verbose')
+        optuna = params.pop('optuna')
 
         # 学習
         if validation:
+            eval_results = {}
             early_stopping_rounds = params.pop('early_stopping_rounds')
-            self.model = lgb.train(
-                                params,
-                                dtrain,
-                                num_boost_round=num_round,
-                                valid_sets=(dtrain, dvalid),
-                                early_stopping_rounds=early_stopping_rounds,
-                                verbose_eval=verbose
-                                )
+            if optuna:
+                self.model = opt_lgb.train(
+                                    params,
+                                    dtrain,
+                                    num_boost_round=num_round,
+                                    valid_sets=(dtrain, dvalid),
+                                    early_stopping_rounds=early_stopping_rounds,
+                                    verbose_eval=verbose,
+                                    evals_result=eval_results
+                                    )
+                best_params_array.append(self.model.params)
+            else:
+                self.model = lgb.train(
+                                    params,
+                                    dtrain,
+                                    num_boost_round=num_round,
+                                    valid_sets=(dtrain, dvalid),
+                                    early_stopping_rounds=early_stopping_rounds,
+                                    verbose_eval=verbose,
+                                    evals_result=eval_results
+                                    )
             model_array.append(self.model)
+            eval_results_array.append(eval_results)
 
         else:
             self.model = lgb.train(params, dtrain, num_boost_round=num_round)
@@ -188,3 +209,52 @@ class ModelLGB(Model):
 
         plt.savefig(dir_name + run_name + '_fi_gain.png', dpi=300, bbox_inches="tight")
         plt.close()
+
+    @classmethod
+    def calc_loss_curve(self, dir_name, run_name):
+        # 損失推移を表示
+        i = 0
+        n_fold = len(eval_results_array)
+        if n_fold > 1:
+            _, axes = plt.subplots(n_fold, 1, figsize=(10, n_fold*5))
+            for i in range(n_fold):
+                loss_func_name = list(eval_results_array[i]['training'].keys())[0]
+                loss_train = eval_results_array[i]['training'][loss_func_name]
+                loss_test = eval_results_array[i]['valid_1'][loss_func_name]
+                
+                axes[i].plot(loss_train, label='train loss')
+                axes[i].plot(loss_test, label='test loss')
+                axes[i].set_title(f"fold:{i}")
+                axes[i].set_xlabel('Iteration')
+                axes[i].set_ylabel('logloss')
+                axes[i].legend()
+        else:
+            ax = plt.subplot()
+            loss_func_name = list(eval_results_array[i]['training'].keys())[0]
+            loss_train = eval_results_array[i]['training'][loss_func_name]
+            loss_test = eval_results_array[i]['valid_1'][loss_func_name]
+            
+            ax.plot(loss_train, label='train loss')
+            ax.plot(loss_test, label='valid loss')
+            ax.set_title(f"fold:{i}")
+            ax.set_xlabel('Iteration')
+            ax.set_ylabel(loss_func_name)
+            ax.legend()            
+        plt.savefig(dir_name + run_name + '_loss_curve.png', dpi=300, bbox_inches="tight")
+        plt.close()
+
+    def save_optuna_best_params(self, dir_name, run_name):
+        '''
+        '''
+        eval_results_dict = {}
+        for i, v in enumerate(eval_results_array):
+            eval_results_dict[i] = v
+        fw = open(dir_name + run_name  + '_param.json', 'w')
+        json.dump(eval_results_dict, fw, indent=4, default=self.set_default)
+
+    def set_default(self, obj):
+        """json出力の際にset型のオブジェクトをリストに変更する
+        """
+        if isinstance(obj, set):
+            return list(obj)
+        raise TypeError

@@ -44,6 +44,16 @@ direction, x, y, timeの組み合わせで1レコードを成す
     - test: (2340, 5)
         - 35 × 65 = 2340
 
+validationに使用
+- 1991-09-29 00:00:00 ~
+    row_id: 841815
+
+- 1991-09-29 12:00:00 ~
+    row_id: 844155
+
+- 1991-09-30 00:00:00 ~
+    row_id: 846495
+
 
 ## 22/03/03
 コンペ参加
@@ -159,3 +169,94 @@ training's l1: 4.85846	valid_1's l1: 6.7615
 →データ数が少ないかも？ train_index → 151190レコード()
 
 
+## 22/03/26
+(point)
+時系列に関するを特徴量に入れる場合は、kfoldよりholdoutの方が高くなる場合がある。
+lgb_0326_0533とlgb_0326_0536の比較
+同じ特徴量でバリデーションを変更
+holdoutの方がスコアが高い
+→おそらくリークしていないため
+
+(idea)
+回帰ではなく分類問題にしてみる？
+
+
+(point)
+accum_minutes_half_dayとaccum_minutesの比較
+accum_minutes_half_dayの方が僅かに良い
+- accum_minutes_half_day
+    run_name: lgb_0326_1253
+    score: 5.266
+- accum_minutes
+    run_name: lgb_0327_0037
+    score: 5.284
+
+同じバリデーションを使用
+"cv": {
+    "method": "HoldOut",
+    "min_id": 841815,
+    "n_splits": 1,
+    "random_state": 42,
+    "shuffle": true,
+    "cv_target": "congestion"
+},
+
+"load_features": [
+    "shift_3days",
+    "datetime_element",
+    "coordinate",
+    "decompose_direction",
+    "accum_minutes"( or "accum_minutes_half_day" ),
+    "agg_shift_by_date",
+    "rolling_30days",
+    "diff_3days",
+    "is_weekend"
+],
+
+
+## 22/03/27
+午前の統計量を特徴量として追加
+scoreが0.083減少
+- 午前の統計量無し
+    run_name: lgb_0327_0037
+    score: 5.284
+- 午前の統計量有り
+    run_name: lgb_0327_0118
+    score: 5.201
+
+autoMLモデルを使ってみる
+
+(リファクタリング)
+rollingの際に欠損値を含んでも可能にしたい
+
+
+特徴量を追加した方がスコアが低い
+- lgb_0328_1409
+    - 5.697
+
+- lgb_0328_2339
+    - 5.755
+
+
+## 22/03/30
+notebookの実装
+欠損値を平均で埋めてみる
+https://www.kaggle.com/code/martynovandrey/tps-mar-22-fe-model-selection
+
+
+
+## 22/03/31
+public in top 15%
+private in top 50%
+shake down
+rank 1st comment
+https://www.kaggle.com/competitions/tabular-playground-series-mar-2022/discussion/316271
+
+
+### 所感
+1ヶ月通してコンペに初参加
+pandas, numpyの前処理などに時間をかけ過ぎ
+関数化、綺麗なコード管理をしようとし過ぎ
+→学びや発見がないと集中力が切れやすい。。
+次回は、最短でsubmission出来るように、可視化や関数化などに拘りすぎずに進めるのが良さそう
+例えば、日曜の午後に1週間の振り返りをするなど。。。

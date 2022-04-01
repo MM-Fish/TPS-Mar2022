@@ -26,8 +26,13 @@ CONFIG_FILE = '../configs/config.yaml'
 with open(CONFIG_FILE) as file:
     yml = yaml.safe_load(file)
 MODEL_DIR_NAME = yml['SETTING']['MODEL_DIR_NAME']
-# FEATURE_DIR_NAME = yml['SETTING']['FEATURE_DIR_NAME']
-FEATURE_DIR_NAME = yml['SETTING']['FEATURE_DIR_NAME_IMP']
+FEATURE_DIR_NAME = yml['SETTING']['FEATURE_DIR_NAME']
+
+# 前処理後
+# RAW_DIR_NAME = yml['SETTING']['RAW_DIR_NAME_IMP']
+# FEATURE_DIR_NAME = yml['SETTING']['FEATURE_DIR_NAME_IMP']
+# print(RAW_DIR_NAME)
+# print(FEATURE_DIR_NAME)
 
 warnings.filterwarnings("ignore")
 warnings.simplefilter('ignore')
@@ -122,20 +127,31 @@ if __name__ == '__main__':
     features = [
         "shift_3days",
         "datetime_element",
-        "accum_minutes_half_day",
-        "x_y_direction",
-        "x_y_direction_dummies",
+        "coordinate",
+        'x_y_direction',
+        "decompose_direction",
+        'accum_minutes_half_day',
+        'agg_by_am',
         "agg_shift_by_date",
-        "diff_3days"
+        # "rolling_30days",
+        "diff_3days",
+        'is_weekend'
         ]
     target = 'congestion'
 
     # CVの設定.methodは[KFold, StratifiedKFold ,GroupKFold]から選択可能
     # CVしない場合（全データで学習させる場合）はmethodに'None'を設定
     # StratifiedKFold or GroupKFoldの場合は、cv_targetに対象カラム名を設定する
+    # TimeSeriesSplitの場合は、time_seires_column, clippingを設定する
     cv = {
         'method': 'KFold',
-        'n_splits': 5,
+        # 'method': 'TimeSeriesSplit',
+        # 'clipping': False,
+        # 'time_series_column': 'date_obj',
+        # 'n_splits': 5,
+        'method': 'HoldOut',
+        'min_id': 844155,
+        'n_splits': 1,
         'random_state': 42,
         'shuffle': True,
         'cv_target': target
@@ -196,7 +212,7 @@ if __name__ == '__main__':
     # Submission.create_submission(run_name, out_dir_name, setting.get('target'), setting.get('task_type'))  # submit作成
 
     # # upload to GCS
-    # if DEBUG == True:
+    # if DEBUG == False:
     #     directry_path = f'../models/{run_name}/'
     #     upload_gcs_from_directory(bucket, directry_path, BLOB_NAME)
     
@@ -221,6 +237,7 @@ if __name__ == '__main__':
         'run_name': run_name,  # run名
         'feature_directory': FEATURE_DIR_NAME,  # 特徴量の読み込み先ディレクトリ
         'target': target,  # 目的変数
+        'id_column': 'row_id', # 行番号
         'calc_shap': False,  # shap値を計算するか否か
         'save_train_pred': True,  # trainデータでの推論値を保存するか否か
         'task_type': 'regression',
@@ -229,7 +246,7 @@ if __name__ == '__main__':
 
     model_params = {
         'task_type': 'regression',
-        'epochs': 30,
+        'epochs': 20,
         'batch_size': 999,
         'learning_rate': 0.1,
         'momentum': 0.8,
@@ -256,7 +273,7 @@ if __name__ == '__main__':
 
     Submission.create_submission(run_name, out_dir_name, setting.get('target'), setting.get('task_type'))  # submit作成
 
-    # upload to GCS
-    if DEBUG == True:
-        directry_path = f'../models/{run_name}/'
-        upload_gcs_from_directory(bucket, directry_path, BLOB_NAME)
+    # # upload to GCS
+    # if DEBUG == False:
+    #     directry_path = f'../models/{run_name}/'
+    #     upload_gcs_from_directory(bucket, directry_path, BLOB_NAME)
