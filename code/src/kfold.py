@@ -6,26 +6,26 @@ from sklearn.model_selection import TimeSeriesSplit
 class MovingWindowKFold(TimeSeriesSplit):
     """時系列情報が含まれるカラムでソートした iloc を返す KFold"""
 
-    def __init__(self, time_series_column, clipping=False, *args, **kwargs):
+    def __init__(self, ts_col, clipping=False, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # 時系列データのカラムの名前
-        self.time_series_column = time_series_column
+        self.ts_col = ts_col
         # trainのデータ数を統一するフラグ
         self.clipping = clipping
 
     def split(self, ts_df: pd.DataFrame, *args, **kwargs):
         # 時系列でソートする
-        sorted_unique_ts_df = ts_df.sort_values(self.time_series_column).drop_duplicates()
+        sorted_unique_ts_df = ts_df.sort_values(self.ts_col).drop_duplicates()
         train_fold_min_len, test_fold_min_len = sys.maxsize, sys.maxsize
         # スーパークラスのメソッドで添字を計算する
         for train_index, test_index in super().split(sorted_unique_ts_df, *args, **kwargs):
             
             # 添字を元々の DataFrame の iloc として使える値に変換する
-            train_ts = sorted_unique_ts_df.iloc[train_index][self.time_series_column].values
-            test_ts = sorted_unique_ts_df.iloc[test_index][self.time_series_column].values
+            train_ts = sorted_unique_ts_df.iloc[train_index][self.ts_col].values
+            test_ts = sorted_unique_ts_df.iloc[test_index][self.ts_col].values
 
-            train_iloc_index = ts_df.loc[ts_df[self.time_series_column].isin(train_ts), :].index
-            test_iloc_index = ts_df.loc[ts_df[self.time_series_column].isin(test_ts), :].index
+            train_iloc_index = ts_df.loc[ts_df[self.ts_col].isin(train_ts), :].index
+            test_iloc_index = ts_df.loc[ts_df[self.ts_col].isin(test_ts), :].index
 
             if self.clipping:
                 # TimeSeriesSplit.split() で返される Fold の大きさが徐々に大きくなることを仮定している

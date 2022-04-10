@@ -1,3 +1,4 @@
+from dataclasses import asdict
 from asyncio.log import logger
 from ctypes import util
 import os
@@ -29,7 +30,7 @@ class ModelLGB(Model):
             dvalid = lgb.Dataset(va_x, va_y)
 
         # ハイパーパラメータの設定
-        params = dict(self.params)
+        params = asdict(self.params)
         num_round = params.pop('num_round')
         verbose = params.pop('verbose')
         optuna = params.pop('optuna')

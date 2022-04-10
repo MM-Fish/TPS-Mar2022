@@ -1,3 +1,4 @@
+from dataclasses import dataclass, asdict
 from distutils.log import debug
 from pyexpat import model
 import sys
@@ -13,6 +14,7 @@ import glob
 
 sys.path.append('./src')
 sys.path.append('./src/models/learning')
+from src.params import Cv, KFoldParams, StratifiedKFoldParams, GroupKFoldParams, TimeSeriesSplitParams, HoldOutParams, Setting, PreprocessingParams, ModelParams, LstmParams
 from src.runner import Runner
 from src.util import Submission
 from src.models.learning.model_lgb import ModelLGB
@@ -29,10 +31,12 @@ MODEL_DIR_NAME = yml['SETTING']['MODEL_DIR_NAME']
 FEATURE_DIR_NAME = yml['SETTING']['FEATURE_DIR_NAME']
 
 # 前処理後
-# RAW_DIR_NAME = yml['SETTING']['RAW_DIR_NAME_IMP']
-# FEATURE_DIR_NAME = yml['SETTING']['FEATURE_DIR_NAME_IMP']
-# print(RAW_DIR_NAME)
-# print(FEATURE_DIR_NAME)
+RAW_DIR_NAME = yml['SETTING']['RAW_DIR_NAME_IMP']
+FEATURE_DIR_NAME = yml['SETTING']['FEATURE_DIR_NAME_IMP']
+
+# ディレクトリ確認
+print(RAW_DIR_NAME)
+print(FEATURE_DIR_NAME)
 
 warnings.filterwarnings("ignore")
 warnings.simplefilter('ignore')
@@ -113,11 +117,11 @@ def upload_gcs_from_directory(bucket: storage.bucket.Bucket, directory_path: str
       blob.upload_from_filename(local_file)
 
 
-########################################################
-####### 以下が実行コード
-
 if __name__ == '__main__':
-    DEBUG = False # スクリプトが動くかどうか検証する
+    ts_col = 'date_obj'
+    target = 'congestion'
+    DEBUG = True
+
     now = datetime.datetime.now()
     suffix = now.strftime("_%m%d_%H%M")
     if DEBUG is True:
@@ -127,37 +131,40 @@ if __name__ == '__main__':
     features = [
         "shift_3days",
         "datetime_element",
-        "coordinate",
-        'x_y_direction',
-        "decompose_direction",
+        'direction_dummies',
+        # "coordinate",
+        # "decompose_direction",
         'accum_minutes_half_day',
         'agg_by_am',
         "agg_shift_by_date",
-        # "rolling_30days",
         "diff_3days",
         'is_weekend'
         ]
-    target = 'congestion'
 
-    # CVの設定.methodは[KFold, StratifiedKFold ,GroupKFold]から選択可能
-    # CVしない場合（全データで学習させる場合）はmethodに'None'を設定
-    # StratifiedKFold or GroupKFoldの場合は、cv_targetに対象カラム名を設定する
-    # TimeSeriesSplitの場合は、time_seires_column, clippingを設定する
-    cv = {
-        'method': 'KFold',
-        # 'method': 'TimeSeriesSplit',
-        # 'clipping': False,
-        # 'time_series_column': 'date_obj',
-        # 'n_splits': 5,
-        'method': 'HoldOut',
-        'min_id': 844155,
-        'n_splits': 1,
-        'random_state': 42,
-        'shuffle': True,
-        'cv_target': target
-    }
+    # バリデーションの設定
+    cv = Cv(
+        cv_class = KFoldParams('KFold'),
+        # cv_class = StratifiedKFoldParams('StratifiedKFold'),
+        # cv_class = GroupKFoldParams('GroupKFold', target),
+        # cv_class = TimeSeriesSplitParams('TimeSeriesSplit', False, ts_col),
+        # cv_class = HoldOutParams('HoldOut', 844155),
+        n_splits = 4,
+        random_state = 42,
+        shuffle = True,
+    )
     if DEBUG is True:
-        cv['n_splits'] = 2
+        cv.n_splits = 2
+
+    # 諸々の設定
+    setting = Setting(
+        feature_directory = FEATURE_DIR_NAME,  # 特徴量の読み込み先ディレクトリ
+        target = target,  # 目的変数
+        id_column = 'row_id', # 行番号
+        calc_shap = False,  # shap値を計算するか否か
+        save_train_pred = True,  # trainデータでの推論値を保存するか否か
+        task_type = 'regression',
+        debug = DEBUG
+    )
 
     # # ######################################################
     # # 学習・推論 keras ###################################
@@ -232,38 +239,51 @@ if __name__ == '__main__':
     # exist_check(MODEL_DIR_NAME, run_name)  # 実行可否確認
     my_makedirs(out_dir_name)  # runディレクトリの作成。ここにlogなどが吐かれる
 
-    # 諸々の設定
-    setting = {
-        'run_name': run_name,  # run名
-        'feature_directory': FEATURE_DIR_NAME,  # 特徴量の読み込み先ディレクトリ
-        'target': target,  # 目的変数
-        'id_column': 'row_id', # 行番号
-        'calc_shap': False,  # shap値を計算するか否か
-        'save_train_pred': True,  # trainデータでの推論値を保存するか否か
-        'task_type': 'regression',
-        'debug': DEBUG
-    }
-
-    model_params = {
-        'task_type': 'regression',
-        'epochs': 20,
-        'batch_size': 999,
-        'learning_rate': 0.1,
-        'momentum': 0.8,
-        'optimizer': 'SGD'
-    }
-
+    # モデルのパラメタ
+    model_params = LstmParams(
+        task_type = 'regression',
+        epochs = 20,
+        batch_size = 999,
+        learning_rate = 0.1,
+        momentum = 0.8,
+        optimizer = 'SGD'
+    )
     if DEBUG is True:
-        model_params['epochs'] = 3
+        model_params.epochs = 3
     
-    runner = Runner(ModelLSTM, features, setting, model_params, cv, FEATURE_DIR_NAME, out_dir_name)
+    # 前処理の設定
+    preprocessing_params = PreprocessingParams(
+        cv_method = cv.cv_class.method,
+        ts_col = ts_col,
+        id_col = setting.id_column,
+        sort_cols = [
+                'date_obj', 
+                'xydirection_re', 
+                'pm', 
+                'accum_minutes_half_day'
+            ],
+        sort_col_feats = [
+                'accum_minutes_half_day',
+                'coordinate',
+                'x_y_direction',
+                'date_obj',
+                'row_id'
+            ]
+        )
+
+    params = ModelParams(
+        run_name = run_name, 
+        model_params = model_params, 
+        preproccesing_params = preprocessing_params)
+        
+    runner = Runner(ModelLSTM, features, setting, params, cv, FEATURE_DIR_NAME, out_dir_name)
 
     # モデルのconfigをjsonで保存
-    value_list = [features, runner.use_feature_name, model_params, cv, setting]
+    value_list = [features, runner.use_feature_name, asdict(model_params), asdict(cv), asdict(setting)]
     save_model_config(key_list, value_list, out_dir_name, run_name)
 
     # runner.visualize_corr() # 相関係数を可視化して保存
-    if cv.get('method') == 'None':
+    if cv.cv_class == 'None':
         runner.run_train_all()  # 全データで学習
         runner.run_predict_all()  # 推論
     else:
@@ -271,7 +291,7 @@ if __name__ == '__main__':
         runner.model_cls.calc_loss_curve(out_dir_name, run_name)  # loss_curveを出力
         runner.run_predict_cv()  # 推論
 
-    Submission.create_submission(run_name, out_dir_name, setting.get('target'), setting.get('task_type'))  # submit作成
+    Submission.create_submission(run_name, out_dir_name, setting.target, setting.task_type)  # submit作成
 
     # # upload to GCS
     # if DEBUG == False:

@@ -5,7 +5,6 @@ import matplotlib.pyplot as plt
 import japanize_matplotlib
 import seaborn as sns
 import sys,os
-import shap
 import yaml
 import random
 from models.learning.model import Model
@@ -15,6 +14,7 @@ from sklearn.model_selection import KFold, StratifiedKFold, GroupKFold
 from typing import Callable, List, Optional, Tuple, Union
 from kfold import MovingWindowKFold
 from util import Logger, Util
+from src.params import Cv, KFoldParams, StratifiedKFoldParams, GroupKFoldParams, TimeSeriesSplitParams, HoldOutParams, Setting, PreprocessingParams, ModelParams
 
 # 定数
 shap_sampling = 10000
@@ -24,9 +24,9 @@ class Runner:
     def __init__(self
                 , model_cls: Callable[[str, dict], Model]
                 , features: List[str]
-                , setting: dict
-                , params: dict
-                , cv: dict
+                , setting: Setting
+                , params: ModelParams
+                , cv: Cv
                 , feature_dir_name: str
                 , out_dir_name: str):
         """コンストラクタ
@@ -39,24 +39,22 @@ class Runner:
         :feature_dir_name: 特徴量を読み込むディレクトリ
         :out_dir_name: 学習に使用するファイルを保存するディレクトリ
         """
-        self.run_name = setting.get('run_name')
-        self.task_type = setting.get('task_type')
-        self.model_cls = model_cls
+        self.task_type = setting.task_type
+        self.target = setting.target
+        self.id_column = setting.id_column
+        self.calc_shap = setting.calc_shap
+        self.debug = setting.debug
+        self.model_cls: Model = model_cls
         self.features = features
-        self.target = setting.get('target')
-        self.id_column = setting.get('id_column')
-        self.calc_shap = setting.get('calc_shap')
-        self.save_train_pred = setting.get('save_train_pred')
-        self.params = params
-        self.cv_method = cv.get('method')
-        self.n_splits = cv.get('n_splits')
-        self.random_state = cv.get('random_state')
-        self.shuffle = cv.get('shuffle')
-        self.cv_target_column = cv.get('cv_target')
-        self.clipping = cv.get('clipping')
-        self.time_series_column = cv.get('time_series_column')
-        self.min_id = cv.get('min_id')
-        self.debug = setting.get('debug')
+        self.run_name = params.run_name
+        self.preprocessing_params = params.preproccesing_params
+        self.params = params.model_params
+        self.save_train_pred = setting.save_train_pred
+        self.cv_method = cv.cv_class.method
+        self.n_splits = cv.n_splits
+        self.random_state = cv.random_state
+        self.shuffle = cv.shuffle
+        self.cv_params = cv.cv_class
         self.feature_dir_name = feature_dir_name
         self.model_dir_name = out_dir_name
         self.remove_train_index = None # trainデータからデータを絞り込む際に使用する。除外するindexを保持。
@@ -95,27 +93,6 @@ class Runner:
 
         del df, corr
 
-
-    def shap_feature_importance(self) -> None:
-        """計算したshap値を可視化して保存する
-        """
-        all_columns = self.train_x.columns.values.tolist() + [self.target]
-        ma_shap = pd.DataFrame(sorted(zip(abs(self.shap_values).mean(axis=0), all_columns), reverse=True),
-                        columns=['Mean Abs Shapley', 'Feature']).set_index('Feature')
-        ma_shap = ma_shap.sort_values('Mean Abs Shapley', ascending=True)
-
-        fig = plt.figure(figsize = (8,25))
-        plt.tick_params(labelsize=12) # 図のラベルのfontサイズ
-        ax = fig.add_subplot(1,1,1)
-        ax.set_title('shap value')
-        ax.barh(ma_shap.index, ma_shap['Mean Abs Shapley'] , label='Mean Abs Shapley',  align="center", alpha=0.8)
-        labels = ax.get_xticklabels()
-        plt.setp(labels, rotation=0, fontsize=10)
-        ax.legend(loc = 'upper left')
-        plt.savefig(self.out_dir_name + self.run_name + '_shap.png', dpi=300, bbox_inches="tight")
-        plt.close()
-
-
     def get_feature_name(self):
         """ 学習に使用する特徴量を返却
         """
@@ -123,7 +100,7 @@ class Runner:
 
 
     def train_fold(self, i_fold: Union[int, str]) -> Tuple[
-        Model, Optional[np.array], Optional[np.array], Optional[float]]:
+        Model, Union[np.ndarray, float], Union[np.ndarray, float], Union[float, float]]:
         """クロスバリデーションでのfoldを指定して学習・評価を行う
         他のメソッドから呼び出すほか、単体でも確認やパラメータ調整に用いる
         :param i_fold: foldの番号（すべてのときには'all'とする）
@@ -135,6 +112,7 @@ class Runner:
         train_y = self.train_y.copy()
 
         if validation:
+            i_fold = int(i_fold)
 
             # 学習データ・バリデーションデータのindexを取得
             if self.cv_method == 'KFold':
@@ -191,7 +169,7 @@ class Runner:
             model.train(train_x, train_y)
 
             # モデルを返す
-            return model, None, None, None
+            return model, np.nan, np.nan, np.nan
 
 
     def run_train_cv(self) -> None:
@@ -199,14 +177,11 @@ class Runner:
         学習・評価とともに、各foldのモデルの保存、スコアのログ出力についても行う
         """
         self.logger.info(f'{self.run_name} - start training cv')
-        if self.cv_method == 'KFold':
-            self.logger.info(f'{self.run_name} - cv method: {self.cv_method}')
-        else:
-            self.logger.info(f'{self.run_name} - cv method: {self.cv_method} - target: {self.cv_target_column}')
+        self.logger.info(f'{self.run_name} - cv method: {self.cv_method} - target: {self.target}')
 
-        scores = [] # 各foldのscoreを保存
-        va_idxes = [] # 各foldのvalidationデータのindexを保存
-        preds = [] # 各foldの推論結果を保存
+        va_idxes = np.empty(0, int) # 各foldのvalidationデータのindexを保存
+        preds = np.empty(0) # 各foldの推論結果を保存
+        scores = np.empty(self.n_splits) # 各foldのscoreを保存
 
         # 各foldで学習を行う
         for i_fold in range(self.n_splits):
@@ -219,30 +194,26 @@ class Runner:
             model.save_model(self.out_dir_name)
 
             # 結果を保持する
-            va_idxes.append(va_idx)
-            scores.append(score)
-            preds.append(va_pred)
+            va_idxes = np.append(va_idxes, va_idx)
+            preds = np.append(preds, va_pred)
+            scores[i_fold] = score
 
         # 各foldの結果をまとめる
-        va_idxes = np.concatenate(va_idxes)
-        row_ids = self.row_ids[self.id_column]
-        row_ids = row_ids[list(va_idxes)].reset_index(drop=True)
-        preds = pd.Series(np.concatenate(preds, axis=0))
-        preds = pd.concat([row_ids, preds], axis=1)
-        preds.columns = ['row_id', 'pred']
+        id_idx = self.id_idx_train[va_idxes]
+        id_idx = pd.Series(id_idx)
+        preds_series = pd.Series(preds)
+        preds_df = pd.concat([id_idx, preds_series], axis=1)
+        preds_df.columns = [self.id_column, 'pred']
+        preds_df = preds_df.sort_values(self.id_column).reset_index(drop=True)
 
         self.logger.info(f'{self.run_name} - end training cv - score {np.mean(scores)}')
 
         # 学習データでの予測結果の保存
         if self.save_train_pred:
-            Util.dump_df_pickle(preds, self.out_dir_name + f'.{self.run_name}-train.pkl')
+            Util.dump_df_pickle(preds_df, self.out_dir_name + f'.{self.run_name}-train.pkl')
 
         # 評価結果の保存
         self.logger.result_scores(self.run_name, scores)
-
-        # shap feature importanceデータの保存
-        if self.calc_shap:
-            self.shap_feature_importance()
 
 
     def run_predict_cv(self) -> None:
@@ -273,11 +244,18 @@ class Runner:
             # 多クラス分類
             pred_sub = np.argmax(pred_avg, axis=1)
         else:
+            pred_sub = np.empty(0)
             print('task_typeが正しくありません。')
             sys.exit(0)
 
+        preds_series = pd.Series(pred_sub)
+        id_idx_series = pd.Series(self.id_idx_test)
+        preds_df = pd.concat([id_idx_series, preds_series], axis=1)
+        preds_df.columns = [self.id_column, 'pred']
+        preds_df = preds_df.sort_values(self.id_column).reset_index(drop=True)
+
         # 推論結果の保存（submit対象データ）
-        Util.dump_df_pickle(pd.DataFrame(pred_sub), self.out_dir_name + f'{self.run_name}-pred.pkl')
+        Util.dump_df_pickle(preds_df, self.out_dir_name + f'{self.run_name}-pred.pkl')
 
         self.logger.info(f'{self.run_name} - end prediction cv')
 
@@ -354,36 +332,12 @@ class Runner:
         # -----------------------------------------
         return pd.Series(train_y[self.target])
 
-    # 多クラス分類のデータ分割
-    ####################データ型直す nnのために numpyにする
-    def load_train(self) -> Tuple[pd.DataFrame, pd.Series]:
-        train_x, train_y = self.load_x_train(), self.load_y_train()
+
+    def load_train(self) -> Tuple[np.ndarray, np.ndarray]:
+        train_x, train_y, self.preprocessing_settings_train = self.model_cls.preprocessing_train(self.load_x_train(), self.load_y_train(), self.preprocessing_params, self.feature_dir_name)
         
-        ############ (要修正)モデルに持たせたい
-        if self.model_cls.__name__=='ModelLSTM':
-            # 欠損している日ごと除去
-            train_x['date'] = train_x['month'].astype(str) + '_' + train_x['day'].astype(str)
-            drop_index = (train_x.isnull().any(axis=1)) | (train_y.isna())
-            drop_dates = train_x.loc[drop_index, 'date'].unique()
-            self.keep_index = ~train_x['date'].isin(drop_dates) & train_x['pm'] == 1
-            train_x, train_y = train_x.loc[self.keep_index, :], train_y[self.keep_index]
-            
-            train_x = train_x.sort_values(['month', 'day', 'xydirection_re', 'pm', 'accum_minutes_half_day']).drop(['xydirection_re', 'date'], axis=1)
-            print(train_x.columns)
-            size_name = len(train_x['accum_minutes_half_day'].unique())
-            train_x = np.array(train_x).reshape(-1, size_name, train_x.shape[-1])
-            train_y = train_y.to_numpy().reshape(-1, size_name)
-        else:
-            # 欠損値除去
-            # self.keep_index = ~train_x.isna().any(axis=1) & ~train_y.isna()
-            # 午後のみを使用
-            self.keep_index = ~train_x.isna().any(axis=1) & ~train_y.isna() & train_x['pm'] == 1
-            train_x, train_y = train_x.loc[self.keep_index, :], train_y[self.keep_index]
-            train_x, train_y = np.array(train_x), np.array(train_y)
-            
         # 列ID取得
-        self.row_ids = self.load_row_ids()
-        self.row_ids = self.row_ids.reset_index(drop=True)
+        self.id_idx_train = self.preprocessing_settings_train.id_idx
 
         if self.debug is True:
             """サンプル数を50程度にする
@@ -391,17 +345,7 @@ class Runner:
             idx = random.sample(range(0, len(train_x)), 50)
             return train_x[idx], train_y[idx]
         else:
-            # return train_x, train_y
-            # 欠損値を除去する場合
             return train_x, train_y
-        
-    def load_row_ids(self) -> pd.Series:
-        """IDを読み込む（予測結果などと照らし合わせるときに使用）
-        :return:  ID
-        """
-        row_ids = pd.read_pickle(self.feature_dir_name + self.id_column + '_train.pkl').loc[self.keep_index, :]
-        return row_ids
-
 
     def load_x_test(self) -> pd.DataFrame:
         """テストデータの特徴量を読み込む
@@ -410,13 +354,10 @@ class Runner:
         dfs = [pd.read_pickle(self.feature_dir_name + f'{f}_test.pkl') for f in self.features]
         test_x = pd.concat(dfs, axis=1)
 
-        ############ (要修正)モデルに持たせたい
-        if self.model_cls.__name__=='ModelLSTM':
-            test_x = test_x.sort_values(['month', 'day', 'xydirection_re', 'pm', 'accum_minutes_half_day']).drop(['xydirection_re'], axis=1)
-            size_name = len(test_x['accum_minutes_half_day'].unique())
-            test_x = np.array(test_x).reshape(-1, size_name, test_x.shape[-1])
-        else:
-            test_x = np.array(test_x)
+        test_x, self.preprocessing_settings_test = self.model_cls.preprocessing_test(test_x, self.preprocessing_params, self.feature_dir_name)
+
+        # 列ID取得
+        self.id_idx_test = self.preprocessing_settings_test.id_idx
 
         if self.debug is True:
             """サンプル数を20程度にする
@@ -433,18 +374,12 @@ class Runner:
         または、StratifiedKFoldで分布の比率を維持したいカラムを取得する
         :return: 分布の比率を維持したいデータの特徴量
         """
-        df = pd.read_pickle(self.feature_dir_name + self.cv_target_column + '_train.pkl')
-        return df[self.cv_target_column]
+        # エラー処理入れたい
+        if isinstance(self.cv_params, GroupKFoldParams):
+            df = pd.read_pickle(self.feature_dir_name + self.cv_params.target + '_train.pkl')
+            return df[self.cv_params.target]
 
-    def load_time_series(self) -> pd.Series:
-        """
-        TimeSeriesSplitの基準となる時系列カラムを取得する
-        :return: 時系列の特徴量
-        """
-        df = pd.read_pickle(self.feature_dir_name + self.time_series_column + '_train.pkl').loc[self.keep_index, :].reset_index(drop=True)
-        return df[self.time_series_column]
-
-    def load_index_k_fold(self, i_fold: int) -> np.array:
+    def load_index_k_fold(self, i_fold: int) -> Tuple[np.ndarray, np.ndarray]:
         """クロスバリデーションでのfoldを指定して対応するレコードのインデックスを返す
         :param i_fold: foldの番号
         :return: foldに対応するレコードのインデックス
@@ -454,7 +389,7 @@ class Runner:
         kf = KFold(n_splits=self.n_splits, shuffle=self.shuffle, random_state=self.random_state)
         return list(kf.split(dummy_x))[i_fold]
 
-    def load_index_sk_fold(self, i_fold: int) -> np.array:
+    def load_index_sk_fold(self, i_fold: int) -> Tuple[np.ndarray, np.ndarray]:
         """クロスバリデーションでのfoldを指定して対応するレコードのインデックスを返す
         :param i_fold: foldの番号
         :return: foldに対応するレコードのインデックス
@@ -465,7 +400,7 @@ class Runner:
         kf = StratifiedKFold(n_splits=self.n_splits, shuffle=self.shuffle, random_state=self.random_state)
         return list(kf.split(dummy_x, stratify_data))[i_fold]
 
-    def load_index_gk_fold(self, i_fold: int) -> np.array:
+    def load_index_gk_fold(self, i_fold: int) -> Tuple[np.ndarray, np.ndarray]:
         """クロスバリデーションでのfoldを指定して対応するレコードのインデックスを返す
         :param i_fold: foldの番号
         :return: foldに対応するレコードのインデックス
@@ -476,29 +411,26 @@ class Runner:
         kf = GroupKFold(n_splits=self.n_splits)
         return list(kf.split(dummy_x, self.train_y, groups=group_series))[i_fold]
 
-    def load_index_ts_fold(self, i_fold: int) -> np.array:
+    def load_index_ts_fold(self, i_fold: int) -> Tuple[np.ndarray, np.ndarray]:
         """クロスバリデーションでのfoldを指定して対応するレコードのインデックスを返す
         :param i_fold: foldの番号
         :return: foldに対応するレコードのインデックス
         """
         # 学習データ・バリデーションデータを分けるインデックスを返す
-        ts_series = self.load_time_series()
-        kf = MovingWindowKFold(time_series_column=self.time_series_column, clipping=self.clipping, n_splits=self.n_splits)
-        return list(kf.split(pd.DataFrame(ts_series)))[i_fold]
+        ts_index = self.preprocessing_settings_train.ts_index
+        if isinstance(self.cv_params, TimeSeriesSplitParams):
+            kf = MovingWindowKFold(ts_col=self.cv_params.ts_col, clipping=self.cv_params.clipping, n_splits=self.n_splits)
 
-    def hold_out(self) -> np.array:
+        ts = pd.DataFrame(ts_index)
+        ts.columns = [self.cv_params.ts_col]
+        return list(kf.split(ts))[i_fold]
+
+    def hold_out(self) -> Tuple[np.ndarray, np.ndarray]:
         """クロスバリデーションでのfoldを指定して対応するレコードのインデックスを返す
         :param i_fold: foldの番号
         :return: foldに対応するレコードのインデックス
         """
-        ############ (要修正)モデルに持たせたい
-        if self.model_cls.__name__=='ModelLSTM':
-            n_train_x = int(len(self.train_x))
-            va_bgn = n_train_x - 65
-            tr_idx = np.arange(0, va_bgn)
-            va_idx = np.arange(va_bgn, n_train_x)
-        else:
-            # 学習データ・バリデーションデータを分けるインデックスを返す
-            tr_idx = self.row_ids.loc[self.row_ids[self.id_column] < self.min_id, :].index
-            va_idx = self.row_ids.loc[self.row_ids[self.id_column] >= self.min_id, :].index
+        # 学習データ・バリデーションデータを分けるインデックスを返す
+        tr_idx = self.id_idx_train.loc[self.id_idx_train[self.id_column] < self.cv_params.min_id, :].index
+        va_idx = self.id_idx_train.loc[self.id_idx_train[self.id_column] >= self.cv_params.min_id, :].index
         return tr_idx, va_idx

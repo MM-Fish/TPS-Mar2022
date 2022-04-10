@@ -31,8 +31,7 @@ def impute_time_series(df, time_col, freq):
   return df_imputation.sort_values(['time', 'x', 'y', 'direction', 'congestion'])
 
 
-time_col = 'time'
-freq = '20min'
-df = train.copy()
-impute_time_series(df, time_col, freq)
+# time_col = 'time'
+# freq = '20min'
+# impute_time_series(train, time_col, freq)
 

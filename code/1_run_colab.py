@@ -1,5 +1,7 @@
+from dataclasses import dataclass, asdict
 from distutils.log import debug
 from pyexpat import model
+from random import shuffle
 import sys
 import os
 import shutil
@@ -13,6 +15,7 @@ import glob
 
 sys.path.append('./src')
 sys.path.append('./src/models/learning')
+from src.params import Cv, KFoldParams, StratifiedKFoldParams, GroupKFoldParams, TimeSeriesSplitParams, HoldOutParams, Setting, PreprocessingParams, ModelParams, LgbParams
 from src.runner import Runner
 from src.util import Submission
 from src.models.learning.model_lgb import ModelLGB
@@ -119,7 +122,10 @@ def upload_gcs_from_directory(bucket: storage.bucket.Bucket, directory_path: str
 ####### 以下が実行コード
 
 if __name__ == '__main__':
-    DEBUG = False # スクリプトが動くかどうか検証する
+    ts_col = 'date_obj'
+    target = 'congestion'
+    DEBUG = True
+    
     now = datetime.datetime.now()
     suffix = now.strftime("_%m%d_%H%M")
     if DEBUG is True:
@@ -138,75 +144,80 @@ if __name__ == '__main__':
         "diff_3days",
         'is_weekend'
         ]
-    target = 'congestion'
 
-    # CVの設定.methodは[KFold, StratifiedKFold ,GroupKFold]から選択可能
-    # CVしない場合（全データで学習させる場合）はmethodに'None'を設定
-    # StratifiedKFold or GroupKFoldの場合は、cv_targetに対象カラム名を設定する
-    # TimeSeriesSplitの場合は、time_seires_column, clippingを設定する
-    cv = {
-        'method': 'KFold',
-        # 'method': 'TimeSeriesSplit',
-        # 'clipping': False,
-        # 'time_series_column': 'date_obj',
-        'n_splits': 4,
-        # 'method': 'HoldOut',
-        # 'min_id': 844155,
-        # 'n_splits': 1,
-        'random_state': 42,
-        'shuffle': True,
-        'cv_target': target
-    }
+    # バリデーションの設定
+    cv = Cv(
+        cv_class = KFoldParams('KFold'),
+        # cv_class = StratifiedKFoldParams('StratifiedKFold'),
+        # cv_class = GroupKFoldParams('GroupKFold', target),
+        # cv_class = TimeSeriesSplitParams('TimeSeriesSplit', False, ts_col),
+        # cv_class = HoldOutParams('HoldOut', 844155),
+        n_splits = 2,
+        random_state = 42,
+        shuffle = True,
+    )
     if DEBUG is True:
-        cv['n_splits'] = 2
+        cv.n_splits = 2
+
+    # 諸々の設定
+    setting = Setting(
+        feature_directory = FEATURE_DIR_NAME,  # 特徴量の読み込み先ディレクトリ
+        target = target,  # 目的変数
+        id_column = 'row_id', # 行番号
+        calc_shap = False,  # shap値を計算するか否か
+        save_train_pred = True,  # trainデータでの推論値を保存するか否か
+        task_type = 'regression',
+        debug = DEBUG
+    )
 
     # ######################################################
     # 学習・推論 LightGBM ###################################
 
-    # run nameの設定
+    # run name定義とディレクトリ作成
     run_name = 'lgb'
     run_name = run_name + suffix
     out_dir_name = MODEL_DIR_NAME + run_name + '/'
+    my_makedirs(out_dir_name)
 
-    # exist_check(MODEL_DIR_NAME, run_name)  # 実行可否確認
-    my_makedirs(out_dir_name)  # runディレクトリの作成。ここにlogなどが吐かれる
-
-    # 諸々の設定
-    setting = {
-        'run_name': run_name,  # run名 <- settingに不要？
-        'feature_directory': FEATURE_DIR_NAME,  # 特徴量の読み込み先ディレクトリ
-        'target': target,  # 目的変数
-        'id_column': 'row_id', # 行番号
-        'calc_shap': False,  # shap値を計算するか否か
-        'save_train_pred': True,  # trainデータでの推論値を保存するか否か
-        'task_type': 'regression',
-        'debug': DEBUG
-    }
-
-    # モデルのパラメータ
-    model_params = {
-        'boosting_type': 'gbdt',
-        'objective': 'regression',
-        'metric': 'mae',
-        'num_round': 5000,
-        'early_stopping_rounds': 1000,
-        'verbose': 1000,
-        'random_state': 999,
-        'optuna': False
-    }
+    # モデルのパラメタ
+    model_params = LgbParams(
+            boosting_type =  'gbdt',
+            objective = 'regression',
+            metric = 'mae',
+            num_round = 5000,
+            early_stopping_rounds = 1000,
+            verbose = 1000,
+            random_state = 999,
+            optuna = False,
+    )
     if DEBUG is True:
-        model_params['num_round'] = 1000
-    
-    runner = Runner(ModelLGB, features, setting, model_params, cv, FEATURE_DIR_NAME, out_dir_name)
+        model_params.num_round = 500
+        model_params.early_stopping_rounds = 100
 
-    use_feature_name = runner.use_feature_name # 今回の学習で使用する特徴量名を取得
+    # 前処理の設定
+    preprocessing_params = PreprocessingParams(
+        cv_method = cv.cv_class.method, 
+        ts_col = ts_col, 
+        id_col = setting.id_column, 
+        sort_cols = None, 
+        sort_col_feats = None
+    )
+
+    params = ModelParams(
+        run_name = run_name,
+        model_params = model_params,
+        preproccesing_params = preprocessing_params
+    )
+
+    runner = Runner(ModelLGB, features, setting, params, cv, FEATURE_DIR_NAME, out_dir_name)
 
     # モデルのconfigをjsonで保存
-    value_list = [features, use_feature_name, model_params, cv, setting]
+    use_feature_name = runner.use_feature_name # 今回の学習で使用する特徴量名を取得
+    value_list = [features, use_feature_name, asdict(model_params), asdict(cv), asdict(setting)]
     save_model_config(key_list, value_list, out_dir_name, run_name)
 
     # runner.visualize_corr() # 相関係数を可視化して保存
-    if cv.get('method') == 'None':
+    if cv.cv_class == 'None':
         runner.run_train_all()  # 全データで学習
         runner.run_predict_all()  # 推論
     else:
@@ -216,7 +227,7 @@ if __name__ == '__main__':
         # ModelLGB.save_optuna_best_params(out_dir_name, run_name, use_feature_name)  # optunaのbest paramsを保存
         runner.run_predict_cv()  # 推論
 
-    Submission.create_submission(run_name, out_dir_name, setting.get('target'), setting.get('task_type'))  # submit作成
+    Submission.create_submission(run_name, out_dir_name, setting.target, setting.task_type)  # submit作成
 
     # upload to GCS
     if DEBUG == False:
@@ -236,17 +247,8 @@ if __name__ == '__main__':
     # my_makedirs(out_dir_name)  # runディレクトリの作成。ここにlogなどが吐かれる
 
     # # 諸々の設定
-    # setting = {
-    #     'run_name': run_name,  # run名
-    #     'feature_directory': FEATURE_DIR_NAME,  # 特徴量の読み込み先ディレクトリ
-    #     'target': target,  # 目的変数
-    #     'calc_shap': False,  # shap値を計算するか否か
-    #     'save_train_pred': True,  # trainデータでの推論値を保存するか否か
-    #     'task_type': 'multiclass',
-    #     'debug': DEBUG
-    # }
-
     # model_params = {
+    #     'run_name': run_name,
     #     'objective': 'multi:softprob',
     #     'metric': 'mlogloss',
     #     'num_class': 10,
@@ -288,19 +290,9 @@ if __name__ == '__main__':
     # # exist_check(MODEL_DIR_NAME, run_name)  # 実行可否確認
     # my_makedirs(out_dir_name)  # runディレクトリの作成。ここにlogなどが吐かれる
 
-    # # 諸々の設定
-    # setting = {
-    #     'run_name': run_name,  # run名
-    #     'feature_directory': FEATURE_DIR_NAME,  # 特徴量の読み込み先ディレクトリ
-    #     'target': target,  # 目的変数
-    #     'calc_shap': False,  # shap値を計算するか否か
-    #     'save_train_pred': True,  # trainデータでの推論値を保存するか否か
-    #     'task_type': 'multiclass',
-    #     'debug': DEBUG
-    # }
-
     # # モデルのパラメータ
     # model_params = {
+    #     'run_name': run_name,
     #     'solver': 'svd',
     #     'n_components': 5
     # }
